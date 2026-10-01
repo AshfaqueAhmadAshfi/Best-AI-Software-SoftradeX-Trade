@@ -1,0 +1,7 @@
+# Core backend
+fastapi>=0.110
+uvicorn>=0.27
+websockets>=12
+
+# Official MetaTrader 5 bridge (Windows only)
+MetaTrader5>=5.0.45; sys_platform == "win32"
