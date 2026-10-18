@@ -53,7 +53,7 @@
     "max_trades": 1,
     "tp": 0.5,
     "sl": 5.0,
-    "symbol": "XAUUSD247m",
+    "symbol": "XAUUSDm",
     "timeframe": "D1",
     "magic": 777003,
     "slippage_points": 30,
@@ -95,9 +95,9 @@
     "refresh_min": 15.0,
     "auto_close_after_news": true,
     "manual_events": [],
-    "session_market": "XAUUSD247m",
+    "session_market": "XAUUSDm",
     "ai_timeframe": "M15",
-    "ai_market": "XAUUSD247m"
+    "ai_market": "XAUUSDm"
   },
   "bot6": {
     "running": false,

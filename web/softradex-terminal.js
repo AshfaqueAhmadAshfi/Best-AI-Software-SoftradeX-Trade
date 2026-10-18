@@ -36,6 +36,14 @@
   let crosshair = null; // { x, y, candle }
   let dpr = window.devicePixelRatio || 1;
 
+  // Viewport & Interactive Pan / Zoom Navigation State
+  let visibleCandlesCount = 55; // Zoom level: how many candles fit in viewport (15 to 220)
+  let panOffset = 0;            // Pixels panned back into history (0 = live, > 0 = history)
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartPan = 0;
+  let hasMovedDuringDrag = false;
+
   // Whale Order Tracking State & Thresholds
   const WHALE_THRESHOLDS = {
     'BTCUSDT': { minQty: 0.8, minUsd: 60000 },
@@ -149,7 +157,7 @@
   // --- Initial Fallback Seed Data (Ensures no blank chart on network latency) ---
   function getSeedKlines(symbol) {
     const base = symbol === 'BTCUSDT' ? 81500 : (symbol === 'ETHUSDT' ? 2450 : 4165);
-    const count = 75;
+    const count = 160;
     const now = Date.now();
     const step = 5 * 60 * 1000;
     const result = [];
@@ -176,7 +184,7 @@
 
   // --- Fetch Historical Klines from Binance REST API ---
   async function fetchBinanceKlines(symbol, interval) {
-    const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=80`;
+    const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=500`;
     try {
       const resp = await fetch(url, { cache: 'no-cache' });
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -366,7 +374,7 @@
         klines[klines.length - 1] = candle;
       } else if (candleTime > last.time) {
         klines.push(candle);
-        if (klines.length > 85) klines.shift();
+        if (klines.length > 1000) klines.shift();
       }
     } else {
       klines.push(candle);
@@ -590,16 +598,40 @@
     const volH = Math.min(chartH * 0.22, 60);
     const candleH = chartH - volH;
 
-    // 2. Calculate Min / Max Price & Volume
+    const candleSlot = chartW / visibleCandlesCount;
+    const candleBarW = Math.max(2, Math.floor(candleSlot * 0.72));
+    const rightMarginCandles = 3;
+    const rightEdgeX = chartW - (rightMarginCandles * candleSlot);
+
+    // Helper: calculate X for candle index i (0 = oldest, klines.length - 1 = newest)
+    function candleIndexToX(i) {
+      return rightEdgeX - ((klines.length - 1 - i) * candleSlot) + panOffset;
+    }
+
+    // 2. Calculate Min / Max Price & Volume ONLY for candles currently in view
     let minPrice = Infinity;
     let maxPrice = -Infinity;
     let maxVol = 0;
+    let visibleCount = 0;
 
     for (let i = 0; i < klines.length; i++) {
       const c = klines[i];
-      if (c.low < minPrice) minPrice = c.low;
-      if (c.high > maxPrice) maxPrice = c.high;
-      if (c.volume > maxVol) maxVol = c.volume;
+      const cx = candleIndexToX(i);
+      if (cx >= -candleSlot * 2 && cx <= chartW + candleSlot * 2) {
+        visibleCount++;
+        if (c.low < minPrice) minPrice = c.low;
+        if (c.high > maxPrice) maxPrice = c.high;
+        if (c.volume > maxVol) maxVol = c.volume;
+      }
+    }
+
+    if (visibleCount === 0 || minPrice === Infinity || minPrice === maxPrice) {
+      for (let i = Math.max(0, klines.length - visibleCandlesCount); i < klines.length; i++) {
+        const c = klines[i];
+        if (c.low < minPrice) minPrice = c.low;
+        if (c.high > maxPrice) maxPrice = c.high;
+        if (c.volume > maxVol) maxVol = c.volume;
+      }
     }
 
     if (minPrice === maxPrice || minPrice === Infinity) {
@@ -618,10 +650,6 @@
     function priceToY(p) {
       return candleH - ((p - plotMin) / plotRange) * candleH;
     }
-
-    const nCandles = klines.length;
-    const candleSlot = chartW / nCandles;
-    const candleBarW = Math.max(2, candleSlot * 0.72);
 
     // 3. Draw Background Grid Lines
     ctx.strokeStyle = '#181e2b';
@@ -647,27 +675,27 @@
       ctx.fillText(formatNumber(priceAtY, MARKETS[currentSymbol]?.decimals || 2), chartW + 6, y);
     }
 
-    // Vertical Time Grids (5 lines)
+    // Vertical Time Grids (Dynamic intervals based on zoom level)
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    const timeSteps = 5;
-    for (let t = 0; t <= timeSteps; t++) {
-      const idx = Math.floor((nCandles - 1) * (t / timeSteps));
-      if (klines[idx]) {
-        const x = idx * candleSlot + candleSlot / 2;
+    const timeStepInterval = Math.max(5, Math.floor(visibleCandlesCount / 6));
+    for (let i = 0; i < klines.length; i += timeStepInterval) {
+      const x = candleIndexToX(i);
+      if (x >= 25 && x <= chartW - 25) {
         ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, chartH);
         ctx.stroke();
 
-        ctx.fillText(formatTime(klines[idx].time, currentInterval), x, chartH + 5);
+        ctx.fillText(formatTime(klines[i].time, currentInterval), x, chartH + 5);
       }
     }
 
     // 4. Draw Volume Histogram
-    for (let i = 0; i < nCandles; i++) {
+    for (let i = 0; i < klines.length; i++) {
+      const x = candleIndexToX(i);
+      if (x < -candleSlot || x > chartW + candleSlot) continue;
       const c = klines[i];
-      const x = i * candleSlot + candleSlot / 2;
       const vRatio = maxVol > 0 ? (c.volume / maxVol) : 0;
       const barH = vRatio * (volH - 6);
       const isUp = c.close >= c.open;
@@ -684,10 +712,11 @@
       ctx.lineWidth = 1.4;
       ctx.beginPath();
       let started = false;
-      for (let i = 0; i < nCandles; i++) {
+      for (let i = 0; i < klines.length; i++) {
         const val = arr[i];
         if (val === null || val === undefined) continue;
-        const x = i * candleSlot + candleSlot / 2;
+        const x = candleIndexToX(i);
+        if (x < -60 || x > chartW + 60) continue;
         const y = priceToY(val);
         if (!started) {
           ctx.moveTo(x, y);
@@ -699,14 +728,15 @@
       ctx.stroke();
     }
 
-    drawLine(sma7, '#FCD535'); // Binance Yellow SMA7
+    drawLine(sma7, '#00f0ff'); // Cyan SMA7
     drawLine(sma25, '#A855F7'); // Purple SMA25
 
     // 5.5. Draw Whale Volumetric Aura Glows
-    for (let i = 0; i < nCandles; i++) {
+    for (let i = 0; i < klines.length; i++) {
       const c = klines[i];
       if (!c.whale) continue;
-      const x = i * candleSlot + candleSlot / 2;
+      const x = candleIndexToX(i);
+      if (x < -50 || x > chartW + 50) continue;
       const isBuy = c.whale.side === 'BUY';
       const auraColor = isBuy ? 'rgba(14, 203, 129, ' : 'rgba(246, 70, 93, ';
 
@@ -726,9 +756,10 @@
     }
 
     // 6. Draw Candlesticks
-    for (let i = 0; i < nCandles; i++) {
+    for (let i = 0; i < klines.length; i++) {
+      const x = candleIndexToX(i);
+      if (x < -candleSlot * 2 || x > chartW + candleSlot * 2) continue;
       const c = klines[i];
-      const x = i * candleSlot + candleSlot / 2;
       const isUp = c.close >= c.open;
       const color = isUp ? '#0ECB81' : '#F6465D';
 
@@ -753,12 +784,13 @@
     }
 
     // 6.5. Draw Whale Badges & Anchor Pointers on Candles
-    for (let i = 0; i < nCandles; i++) {
+    for (let i = 0; i < klines.length; i++) {
       const c = klines[i];
       if (!c.whale) continue;
-      const x = i * candleSlot + candleSlot / 2;
+      const x = candleIndexToX(i);
+      if (x < -50 || x > chartW + 50) continue;
       const isBuy = c.whale.side === 'BUY';
-      const isLast = (i === nCandles - 1);
+      const isLast = (i === klines.length - 1);
 
       const yHigh = priceToY(c.high);
       const yLow = priceToY(c.low);
@@ -877,6 +909,44 @@
       ctx.fillText(formatNumber(last.close, MARKETS[currentSymbol]?.decimals || 2), chartW + (priceWidth - 4) / 2 + 2, lastY);
     }
 
+    // 7.5. Live / Panned Indicator Badge (Clickable)
+    const badgeX = chartW - 80;
+    const badgeY = 8;
+    const badgeW = 74;
+    const badgeH = 20;
+
+    ctx.save();
+    drawRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, 4);
+    if (panOffset > 10) {
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.18)';
+      ctx.fill();
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 1.2;
+      ctx.shadowColor = 'rgba(0, 240, 255, 0.4)';
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = '#00f0ff';
+      ctx.font = 'bold 9px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('▶ TO LIVE', badgeX + badgeW / 2, badgeY + badgeH / 2);
+    } else {
+      ctx.fillStyle = 'rgba(14, 203, 129, 0.12)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(14, 203, 129, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = '#0ECB81';
+      ctx.font = 'bold 9px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('● LIVE', badgeX + badgeW / 2, badgeY + badgeH / 2);
+    }
+    ctx.restore();
+
     // 8. Draw Crosshair Hover Indicator
     if (crosshair && crosshair.x >= 0 && crosshair.x <= chartW && crosshair.y >= 0 && crosshair.y <= chartH) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
@@ -905,6 +975,19 @@
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(formatNumber(hoveredPrice, MARKETS[currentSymbol]?.decimals || 2), chartW + (priceWidth - 4) / 2 + 2, crosshair.y);
+
+      // Crosshair Time Tag on Bottom
+      if (crosshair.candle) {
+        const timeText = formatTime(crosshair.candle.time, currentInterval);
+        const timeTagW = 60;
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(crosshair.x - timeTagW / 2, chartH + 2, timeTagW, 16);
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '9px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(timeText, crosshair.x, chartH + 10);
+      }
 
       // 8.5. If hovered candle is a Whale Candle, show dedicated HUD card
       if (crosshair.candle && crosshair.candle.whale) {
@@ -1088,6 +1171,8 @@
     recentTrades = [];
     crosshair = null;
 
+    panOffset = 0;
+    visibleCandlesCount = 55;
     fetchBinanceKlines(currentSymbol, currentInterval);
     fetchBinanceTicker(currentSymbol);
     fetchBinanceDepth(currentSymbol);
@@ -1100,6 +1185,8 @@
     document.querySelectorAll('.b-tf-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.interval === interval);
     });
+    panOffset = 0;
+    visibleCandlesCount = 55;
     fetchBinanceKlines(currentSymbol, currentInterval);
     connectWebSocket(currentSymbol, currentInterval);
   }
@@ -1120,34 +1207,180 @@
     }
   }
 
-  // --- Mouse Crosshair Interaction ---
-  function setupCrosshair() {
+  // --- Interactive Drag-to-Pan, Mouse Wheel Zoom & Touch Navigation ---
+  function setupChartInteractions() {
     if (!canvas) return;
 
-    canvas.addEventListener('mousemove', function (e) {
+    // Helper: calculate max pan limit
+    function getMaxPan() {
+      const chartW = (canvas.width / dpr) - 64;
+      const candleSlot = chartW / visibleCandlesCount;
+      return Math.max(0, (klines.length - 8) * candleSlot);
+    }
+
+    // Helper: find candle index at X coordinate
+    function getCandleIndexAtX(x) {
+      if (klines.length === 0) return -1;
+      const chartW = (canvas.width / dpr) - 64;
+      const candleSlot = chartW / visibleCandlesCount;
+      const rightEdgeX = chartW - (3 * candleSlot);
+      const diffFromRight = rightEdgeX + panOffset - x;
+      const offsetIndex = Math.round(diffFromRight / candleSlot);
+      const idx = klines.length - 1 - offsetIndex;
+      return Math.max(0, Math.min(klines.length - 1, idx));
+    }
+
+    // --- Mouse Drag to Pan ---
+    canvas.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) return; // Left click only
+      isDragging = true;
+      hasMovedDuringDrag = false;
+      dragStartX = e.clientX;
+      dragStartPan = panOffset;
+      canvas.style.cursor = 'grabbing';
+    });
+
+    window.addEventListener('mousemove', function (e) {
+      if (!canvas) return;
+
+      if (isDragging) {
+        const dx = e.clientX - dragStartX;
+        if (Math.abs(dx) > 3) hasMovedDuringDrag = true;
+        panOffset = Math.max(0, Math.min(getMaxPan(), dragStartPan + dx));
+        renderChart();
+        return;
+      }
+
+      // Normal crosshair tracking
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      const chartW = rect.width - 64;
+      const chartW = (canvas.width / dpr) - 64;
+      const chartH = (canvas.height / dpr) - 22;
 
-      if (x >= 0 && x <= chartW && klines.length > 0) {
-        const candleSlot = chartW / klines.length;
-        const idx = Math.floor(x / candleSlot);
-        const candle = klines[Math.max(0, Math.min(klines.length - 1, idx))];
-        crosshair = { x, y, candle };
-        if (candle) updateLegend(candle);
+      if (x >= 0 && x <= chartW && y >= 0 && y <= chartH && klines.length > 0) {
+        const idx = getCandleIndexAtX(x);
+        if (idx >= 0 && idx < klines.length) {
+          const candle = klines[idx];
+          crosshair = { x, y, candle };
+          updateLegend(candle);
+        } else {
+          crosshair = null;
+        }
       } else {
-        crosshair = null;
-        if (klines.length > 0) updateLegend(klines[klines.length - 1]);
+        if (crosshair) {
+          crosshair = null;
+          if (klines.length > 0) updateLegend(klines[klines.length - 1]);
+        }
       }
       renderChart();
     });
 
+    window.addEventListener('mouseup', function () {
+      if (isDragging) {
+        isDragging = false;
+        if (canvas) canvas.style.cursor = 'crosshair';
+      }
+    });
+
     canvas.addEventListener('mouseleave', function () {
-      crosshair = null;
-      if (klines.length > 0) updateLegend(klines[klines.length - 1]);
+      if (!isDragging) {
+        crosshair = null;
+        if (klines.length > 0) updateLegend(klines[klines.length - 1]);
+        renderChart();
+      }
+    });
+
+    // --- Mouse Wheel Zoom ---
+    canvas.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      const zoomStep = e.deltaY < 0 ? -4 : 4;
+      const prevCount = visibleCandlesCount;
+      visibleCandlesCount = Math.max(16, Math.min(220, visibleCandlesCount + zoomStep));
+
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const chartW = (canvas.width / dpr) - 64;
+
+      if (visibleCandlesCount !== prevCount && chartW > 0) {
+        const prevSlot = chartW / prevCount;
+        const newSlot = chartW / visibleCandlesCount;
+        const ratio = Math.max(0, Math.min(1, mouseX / chartW));
+        panOffset = Math.max(0, Math.min(getMaxPan(), panOffset + (chartW * (1 - ratio)) * (newSlot / prevSlot - 1)));
+      }
+
+      renderChart();
+    }, { passive: false });
+
+    // --- Click: Handle "▶ TO LIVE" Button ---
+    canvas.addEventListener('click', function (e) {
+      if (hasMovedDuringDrag) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const chartW = (canvas.width / dpr) - 64;
+      const badgeX = chartW - 80;
+      const badgeY = 8;
+      if (x >= badgeX && x <= badgeX + 74 && y >= badgeY && y <= badgeY + 20) {
+        panOffset = 0;
+        renderChart();
+      }
+    });
+
+    // --- Double Click: Reset View ---
+    canvas.addEventListener('dblclick', function () {
+      panOffset = 0;
+      visibleCandlesCount = 55;
       renderChart();
     });
+
+    // --- Touch Screen Drag & Pinch Zoom ---
+    let touchStartX = 0;
+    let touchStartPan = 0;
+    let touchInitialPinch = 0;
+    let touchInitialCount = 55;
+
+    canvas.addEventListener('touchstart', function (e) {
+      if (e.touches.length === 1) {
+        isDragging = true;
+        hasMovedDuringDrag = false;
+        touchStartX = e.touches[0].clientX;
+        touchStartPan = panOffset;
+      } else if (e.touches.length === 2) {
+        isDragging = false;
+        touchInitialPinch = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        touchInitialCount = visibleCandlesCount;
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchmove', function (e) {
+      const chartW = (canvas.width / dpr) - 64;
+      const candleSlot = chartW / visibleCandlesCount;
+      const maxPanOffset = Math.max(0, (klines.length - 8) * candleSlot);
+
+      if (e.touches.length === 1 && isDragging) {
+        const dx = e.touches[0].clientX - touchStartX;
+        if (Math.abs(dx) > 3) hasMovedDuringDrag = true;
+        panOffset = Math.max(0, Math.min(maxPanOffset, touchStartPan + dx));
+        renderChart();
+      } else if (e.touches.length === 2 && touchInitialPinch > 0) {
+        const currentPinch = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const scale = touchInitialPinch / currentPinch;
+        visibleCandlesCount = Math.max(16, Math.min(220, Math.round(touchInitialCount * scale)));
+        renderChart();
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchend', function () {
+      isDragging = false;
+      touchInitialPinch = 0;
+    }, { passive: true });
   }
 
   // --- Initialize SoftradeX Terminal ---
@@ -1167,7 +1400,7 @@
         new ResizeObserver(() => resizeCanvas()).observe(box);
       }
     }
-    setupCrosshair();
+    setupChartInteractions();
 
     // Symbol Tabs Listener
     const symTabs = $('binance-symbol-tabs');
