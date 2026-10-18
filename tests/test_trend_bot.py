@@ -101,14 +101,15 @@ class TestTrendStructureBot(unittest.TestCase):
             self.bot._check_and_trade([])
             mock_open.assert_called_once_with("buy", "bot2_struct_ll_buy")
 
-    def test_candle_counter_flow_down_takes_buy(self):
-        """Counter-flow mode: candle falling (DOWN) + SELLER watch pressure -> BUY."""
+    def test_watch_off_candle_follow_down_takes_sell(self):
+        """Watch OFF: the candle is falling (DOWN), the bot follows it -> SELL."""
         self.bot.cfg["running"] = True
         self.bot.cfg["max_trades"] = 1
+        self.bot.cfg["watch_enabled"] = False
         self.bot.cfg["trend_mode"] = False
         self.bot.symbol = "BTCUSDTm"
         self.bot.symbol_ok = True
-        self._set_watch(30.0, 70.0, "SELLER")  # pressure allows buy-side direction
+        self._set_watch(30.0, 70.0, "SELLER")  # the dial must be ignored while Watch is OFF
 
         fake_rates = [{"open": 83050.0, "time": 1700000000}]  # bar open = 83050
         with patch.object(self.bot, "compute_structure", return_value={"d1": {}, "w1": {}}), \
@@ -122,16 +123,17 @@ class TestTrendStructureBot(unittest.TestCase):
             mock_mt5.copy_rates_from_pos.return_value = fake_rates
 
             self.bot._check_and_trade([])
-            mock_open.assert_called_once_with("buy", "bot2_candle_down_buy")
+            mock_open.assert_called_once_with("sell", "bot2_candle_down_sell")
 
-    def test_candle_counter_flow_up_takes_sell(self):
-        """Counter-flow mode: candle rising (UP) + BUYER watch pressure -> SELL."""
+    def test_watch_off_candle_follow_up_takes_buy(self):
+        """Watch OFF: the candle is rising (UP), the bot follows it -> BUY."""
         self.bot.cfg["running"] = True
         self.bot.cfg["max_trades"] = 1
+        self.bot.cfg["watch_enabled"] = False
         self.bot.cfg["trend_mode"] = False
         self.bot.symbol = "BTCUSDTm"
         self.bot.symbol_ok = True
-        self._set_watch(70.0, 30.0, "BUYER")  # pressure allows sell-side direction
+        self._set_watch(70.0, 30.0, "BUYER")  # the dial must be ignored while Watch is OFF
 
         fake_rates = [{"open": 83000.0, "time": 1700000000}]  # bar open = 83000
         with patch.object(self.bot, "compute_structure", return_value={"d1": {}, "w1": {}}), \
@@ -145,7 +147,7 @@ class TestTrendStructureBot(unittest.TestCase):
             mock_mt5.copy_rates_from_pos.return_value = fake_rates
 
             self.bot._check_and_trade([])
-            mock_open.assert_called_once_with("sell", "bot2_candle_up_sell")
+            mock_open.assert_called_once_with("buy", "bot2_candle_up_buy")
 
     def test_close_all_panic_button(self):
         p1 = {"ticket": 301, "side": "buy", "volume": 0.01, "price_open": 83000.0, "net": 0.0, "magic": 777002}
@@ -156,6 +158,121 @@ class TestTrendStructureBot(unittest.TestCase):
             closed = self.bot.close_all("panic")
             self.assertEqual(closed, 2)
             self.assertFalse(self.bot.cfg["running"])
+
+    # ---------------------------- Watch switch / Watch % field / Reverse button
+    def test_watch_off_ignores_the_dial_completely(self):
+        """Watch OFF -> both sides are allowed whatever the dial says."""
+        self.bot.symbol = "BTCUSDTm"
+        self.bot.cfg["watch_enabled"] = False
+        self.bot.cfg["trend_mode"] = False
+        self._set_watch(51.0, 49.0, "NEUTRAL")   # would block everything while Watch is ON
+        self.assertTrue(self.bot._check_watch_threshold("buy")[0])
+        self.assertTrue(self.bot._check_watch_threshold("sell")[0])
+
+    def test_watch_pct_field_is_authoritative_not_60(self):
+        """The Watch % field decides what is traded - 60% is only the starting value."""
+        self.bot.symbol = "BTCUSDTm"
+        self._set_watch(65.0, 35.0)
+        self.assertTrue(self.bot._check_watch_threshold("buy")[0])     # 65 >= 60 (default)
+
+        self.bot.update_config({"watch_min_pct": 70.0})
+        self.assertFalse(self.bot._check_watch_threshold("buy")[0])    # 65 < 70 -> blocked
+
+        self.bot.update_config({"watch_min_pct": 50.0})
+        self.assertTrue(self.bot._check_watch_threshold("buy")[0])     # 65 >= 50 -> allowed
+        self.assertEqual(self.bot.status()["watch_min_pct"], 50.0)
+        self.assertEqual(self.bot.cfg["watch_min_threshold_pct"], 50.0)  # legacy alias follows
+
+    def test_watch_switch_syncs_with_legacy_trend_mode(self):
+        """The Watch button and the old trend_mode key are one single setting."""
+        cfg = self.bot.update_config({"watch_enabled": False})
+        self.assertFalse(cfg["watch_enabled"])
+        self.assertFalse(cfg["trend_mode"])
+
+        cfg = self.bot.update_config({"trend_mode": True})
+        self.assertTrue(cfg["watch_enabled"])
+        self.assertTrue(cfg["trend_mode"])
+
+        st = self.bot.status()
+        self.assertTrue(st["watch_enabled"])
+        self.assertIn("reverse", st)
+        self.assertIn("next_side", st)
+
+    def test_watch_off_trend_follows_the_candle(self):
+        """Watch OFF: check_trend reads the running candle and never the dial."""
+        self.bot.symbol = "BTCUSDTm"
+        self.bot.cfg["watch_enabled"] = False
+        self.bot.cfg["trend_mode"] = False
+        reads = []
+        self.bot.set_watch_provider(lambda sym: reads.append(sym) or {
+            "buyer_pct": 80.0, "seller_pct": 20.0, "dominant": "BUYER", "updated_at": time.time()})
+
+        with patch("backend.trend_bot.mt5") as mock_mt5:
+            tick = MagicMock()
+            tick.ask = 85100.0
+            tick.bid = 85090.0
+            mock_mt5.symbol_info_tick.return_value = tick
+
+            mock_mt5.copy_rates_from_pos.return_value = [{"open": 85000.0}]
+            self.assertEqual(self.bot.check_trend(force=True), "UP")
+
+            mock_mt5.copy_rates_from_pos.return_value = [{"open": 85200.0}]
+            self.bot._last_trend_check_ts = 0.0
+            self.assertEqual(self.bot.check_trend(force=True), "DOWN")
+
+            # an 80% BUYER dial never even gets read while the Watch switch is OFF
+            self.assertEqual(reads, [])
+
+    def test_reverse_button_flips_the_order_side(self):
+        """Reverse ON: a BUY decision reaches the broker as a SELL, and vice versa."""
+        self.bot.symbol = "BTCUSDTm"
+        self.bot.cfg["reverse"] = True
+        self._set_watch(70.0, 30.0, "BUYER")   # the dial confirms BUY, then it is flipped
+
+        captured = {}
+
+        def fake_send(req, label):
+            captured["req"] = req
+            return True
+
+        with patch("backend.trend_bot.mt5") as mock_mt5, \
+             patch.object(self.bot, "_send", side_effect=fake_send), \
+             patch.object(self.bot, "money_per_price", return_value=1.0):
+            mock_tick = MagicMock()
+            mock_tick.ask = 85000.0
+            mock_tick.bid = 84990.0
+            mock_mt5.symbol_info_tick.return_value = mock_tick
+            mock_mt5.TRADE_ACTION_DEAL = 1
+            mock_mt5.ORDER_TYPE_BUY = 0
+            mock_mt5.ORDER_TYPE_SELL = 1
+            mock_mt5.ORDER_TIME_GTC = 0
+
+            self.assertTrue(self.bot._open_market_trade("buy", "test"))
+            self.assertEqual(captured["req"]["type"], mock_mt5.ORDER_TYPE_SELL)
+            self.assertEqual(captured["req"]["price"], 84990.0)   # the SELL hits the bid
+
+            self.bot.cfg["reverse"] = False
+            self.assertTrue(self.bot._open_market_trade("buy", "test2"))
+            self.assertEqual(captured["req"]["type"], mock_mt5.ORDER_TYPE_BUY)
+
+    def test_next_side_reports_the_reversed_direction(self):
+        """The dashboard hint shows the direction the bot would really take."""
+        self.bot.cfg["reverse"] = False
+        self.bot._current_trend = "UP"
+        self.bot._last_candle_dir = ""
+        self.assertEqual(self.bot._next_side(), "BUY")
+
+        self.bot.cfg["reverse"] = True
+        self.assertEqual(self.bot._next_side(), "SELL")
+
+        # candle-follow branch (Watch OFF) flips too
+        self.bot.cfg["watch_enabled"] = False
+        self.bot.cfg["trend_mode"] = False
+        self.bot._current_trend = "NEUTRAL"
+        self.bot._last_candle_dir = "UP"
+        self.assertEqual(self.bot._next_side(), "SELL")
+        self.bot.cfg["reverse"] = False
+        self.assertEqual(self.bot._next_side(), "BUY")
 
     def _set_watch(self, buyer, seller, dominant=""):
         """Wires a fake watch-dial provider onto the bot (fresh timestamp)."""
@@ -610,6 +727,7 @@ class TestTrendStructureBot(unittest.TestCase):
         self.bot.symbol = "BTCUSDTm"
         self.bot.cfg["tp"] = 0.10
         self.bot.cfg["sl"] = 2.00
+        self._set_watch(70.0, 30.0, "BUYER")
 
         captured = {}
         def fake_send(req, label):
@@ -637,32 +755,38 @@ class TestTrendStructureBot(unittest.TestCase):
             self.assertAlmostEqual(req["sl"], 85000.0 - 2.00, places=2)
 
 
-    def test_watch_52_percent_threshold_gate(self):
-        """Rule: Trade only taken if watch BUY or SELL is > 52%; blocked if <= 52%."""
+    def test_watch_60_percent_threshold_gate(self):
+        """Rule: Trade only taken if watch BUY or SELL is >= 60%; blocked if < 60%."""
         self.bot.symbol = "BTCUSDTm"
 
-        # Case 1: BUY pressure > 52% (53% buy) -> BUY allowed, SELL blocked
-        self._set_watch(53.0, 47.0)
+        # Case 1: Exactly 60.0% BUY pressure (60% ba 60% er beshi) -> BUY allowed, SELL blocked
+        self._set_watch(60.0, 40.0)
         allow_buy, reason_buy = self.bot._check_watch_threshold("buy")
         allow_sell, reason_sell = self.bot._check_watch_threshold("sell")
         self.assertTrue(allow_buy)
         self.assertFalse(allow_sell)
 
-        # Case 2: SELL pressure > 52% (55% sell) -> SELL allowed, BUY blocked
-        self._set_watch(45.0, 55.0)
+        # Case 2: SELL pressure >= 60% (65% sell) -> SELL allowed, BUY blocked
+        self._set_watch(35.0, 65.0)
         allow_buy, reason_buy = self.bot._check_watch_threshold("buy")
         allow_sell, reason_sell = self.bot._check_watch_threshold("sell")
         self.assertFalse(allow_buy)
         self.assertTrue(allow_sell)
 
-        # Case 3: Both <= 52% (e.g. 51% buy vs 49% sell) -> Both blocked
-        self._set_watch(51.0, 49.0)
+        # Case 3: Both < 60% (e.g. 59.9% buy vs 40.1% sell) -> Both strictly blocked
+        self._set_watch(59.9, 40.1)
         allow_buy, _ = self.bot._check_watch_threshold("buy")
         allow_sell, _ = self.bot._check_watch_threshold("sell")
         self.assertFalse(allow_buy)
         self.assertFalse(allow_sell)
 
-        # Case 4: _open_market_trade blocks when <= 52%
+        # Case 4: Empty watch data -> strictly blocked
+        self.bot.set_watch_provider(lambda sym: {})
+        allow_buy, _ = self.bot._check_watch_threshold("buy")
+        self.assertFalse(allow_buy)
+
+        # Case 5: _open_market_trade blocks when < 60%
+        self._set_watch(59.0, 41.0)
         with patch.object(self.bot, "_send") as mock_send, \
              patch("backend.trend_bot.mt5") as mock_mt5:
             mock_tick = MagicMock()
@@ -670,14 +794,13 @@ class TestTrendStructureBot(unittest.TestCase):
             mock_tick.bid = 84990.0
             mock_mt5.symbol_info_tick.return_value = mock_tick
             
-            # 51% BUY -> blocked, _send not called
-            self._set_watch(51.0, 49.0)
+            # 59% BUY -> blocked, _send not called
             res = self.bot._open_market_trade("buy", "test_blocked")
             self.assertFalse(res)
             mock_send.assert_not_called()
 
-            # 53% BUY -> allowed, _send is called
-            self._set_watch(53.0, 47.0)
+            # 60% BUY -> allowed, _send is called
+            self._set_watch(60.0, 40.0)
             res = self.bot._open_market_trade("buy", "test_allowed")
             mock_send.assert_called_once()
 

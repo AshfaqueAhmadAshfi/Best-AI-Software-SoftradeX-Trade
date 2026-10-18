@@ -18,8 +18,8 @@ from typing import Any, Dict, List, Optional
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS trades (
-    position_id TEXT PRIMARY KEY,
-    account     TEXT,
+    position_id TEXT NOT NULL,
+    account     TEXT NOT NULL DEFAULT '',
     ticket      INTEGER,
     symbol      TEXT,
     side        TEXT,
@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS trades (
     magic       INTEGER,
     comment     TEXT,
     source      TEXT,
-    updated_at  INTEGER
+    updated_at  INTEGER,
+    PRIMARY KEY (account, position_id)
 );
 CREATE INDEX IF NOT EXISTS idx_trades_close_time ON trades(close_time DESC);
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
@@ -86,7 +87,62 @@ class Store:
         # displayed - purge them so old data can never leak into a session.
         self._conn.execute("DELETE FROM trades WHERE source = 'demo'")
         self._conn.execute("DELETE FROM trades WHERE account IS NULL OR account = ''")
+        # Position ids are per-server counters: two accounts can hold the same
+        # id, so the key must be (account, position_id). Older databases keyed
+        # on position_id alone would let one account's trade overwrite the
+        # other's - rebuild such tables once.
+        info = list(self._conn.execute("PRAGMA table_info(trades)"))
+        pk_cols = [r[1] for r in sorted((r for r in info if r[5] > 0), key=lambda r: r[5])]
+        if pk_cols and pk_cols != ["account", "position_id"]:
+            self._rebuild_trades_composite_pk()
         self._conn.commit()
+
+    _PK_COLS = ("position_id, account, ticket, symbol, side, volume, open_price, open_time, "
+                "close_price, close_time, profit, commission, swap, net_profit, magic, "
+                "comment, source, updated_at")
+
+    def _rebuild_trades_composite_pk(self) -> None:
+        self._conn.executescript("""
+            DROP INDEX IF EXISTS idx_trades_close_time;
+            DROP INDEX IF EXISTS idx_trades_symbol;
+            DROP INDEX IF EXISTS idx_trades_source;
+            DROP INDEX IF EXISTS idx_trades_account;
+            DROP TABLE IF EXISTS trades_new;
+            CREATE TABLE trades_new (
+                position_id TEXT NOT NULL,
+                account     TEXT NOT NULL DEFAULT '',
+                ticket      INTEGER,
+                symbol      TEXT,
+                side        TEXT,
+                volume      REAL,
+                open_price  REAL,
+                open_time   INTEGER,
+                close_price REAL,
+                close_time  INTEGER,
+                profit      REAL,
+                commission  REAL,
+                swap        REAL,
+                net_profit  REAL,
+                magic       INTEGER,
+                comment     TEXT,
+                source      TEXT,
+                updated_at  INTEGER,
+                PRIMARY KEY (account, position_id)
+            );
+        """)
+        # ascending updated_at: on a (account, position_id) collision the most
+        # recently refreshed row wins
+        self._conn.execute(
+            f"INSERT OR REPLACE INTO trades_new ({self._PK_COLS}) "
+            f"SELECT {self._PK_COLS} FROM trades ORDER BY updated_at ASC"
+        )
+        self._conn.execute("DROP TABLE trades")
+        self._conn.execute("ALTER TABLE trades_new RENAME TO trades")
+        self._conn.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_trades_close_time ON trades(close_time DESC);
+            CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
+            CREATE INDEX IF NOT EXISTS idx_trades_source ON trades(source);
+        """)
 
     # ------------------------------------------------------------------ trades
     def upsert_trades(self, trades: List[Dict[str, Any]], account: str = "") -> int:
@@ -128,8 +184,7 @@ class Store:
                                     profit, commission, swap, net_profit, magic,
                                     comment, source, updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(position_id) DO UPDATE SET
-                    account     = excluded.account,
+                ON CONFLICT(account, position_id) DO UPDATE SET
                     symbol      = excluded.symbol,
                     side        = excluded.side,
                     volume      = excluded.volume,

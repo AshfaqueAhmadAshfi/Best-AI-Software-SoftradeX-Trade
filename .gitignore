@@ -16,3 +16,5 @@ data/*.db-wal
 .idea/
 .vscode/
 *.log
+data/_*.json
+data/*.log

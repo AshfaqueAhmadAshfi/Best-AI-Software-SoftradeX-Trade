@@ -28,6 +28,24 @@ int      g_bridgeLastErr  = 0;
 datetime g_bridgeLastSend = 0;
 
 //+------------------------------------------------------------------+
+//| Re-ping the backend when the connection was lost (backend restart,|
+//| network hiccup). Called by BridgePost - never gives up forever.   |
+//+------------------------------------------------------------------+
+bool BridgeEnsureConnected()
+{
+   if(g_bridgeReady)
+      return(true);
+   string base = g_bridgeUrl;
+   int cut = StringFind(base, "/api/ea/event");
+   if(cut > 0)
+      base = StringSubstr(base, 0, cut);
+   g_bridgeReady = BridgePing(base + "/api/ea/ping");
+   if(g_bridgeReady && g_bridgeVerbose)
+      Print("[Bridge] reconnected to ", base);
+   return(g_bridgeReady);
+}
+
+//+------------------------------------------------------------------+
 //| Initialise the bridge. Returns true when the backend is reachable.|
 //+------------------------------------------------------------------+
 bool BridgeInit(const string baseUrl, const string token, const string eaName = "MT5-EA",
@@ -65,11 +83,16 @@ bool BridgeInit(const string baseUrl, const string token, const string eaName = 
 
 //+------------------------------------------------------------------+
 //| GET request (used for the health ping)                            |
+//| The token travels on the ping too, so a wrong token shows up as   |
+//| OFFLINE on the status line instead of silent 401s afterwards.     |
 //+------------------------------------------------------------------+
 bool BridgePing(const string pingUrl)
 {
    char   post[], result[];
-   string headers = "Content-Type: application/json\r\n\r\n";
+   string headers = "Content-Type: application/json\r\n";
+   if(StringLen(g_bridgeToken) > 0)
+      headers += "X-EA-Token: " + g_bridgeToken + "\r\n";
+   headers += "\r\n";
    string resHeaders = "";
    ResetLastError();
    int code = WebRequest("GET", pingUrl, headers, 3000, post, result, resHeaders);
@@ -99,6 +122,8 @@ string BridgeEscape(const string src)
          out += "\\r";
       else if(c == '\t')
          out += "\\t";
+      else if(c < 0x20)
+         out += StringFormat("\\u%04x", (int)c);   // raw control chars = invalid JSON
       else
          out += ShortToString(c);
    }
@@ -110,7 +135,7 @@ string BridgeEscape(const string src)
 //+------------------------------------------------------------------+
 bool BridgePost(const string json)
 {
-   if(!g_bridgeReady)
+   if(!g_bridgeReady && !BridgeEnsureConnected())
       return(false);
 
    char   data[], result[];
@@ -119,7 +144,15 @@ bool BridgePost(const string json)
       headers += "X-EA-Token: " + g_bridgeToken + "\r\n";
    headers += "\r\n";
 
-   StringToCharArray(json, data, 0, StringLen(json), CP_UTF8);
+   // StringToCharArray counts *elements*; a UTF-8 body can need more bytes
+   // than characters, so convert whole and drop the trailing null - a
+   // char-counted conversion truncated multibyte content mid-sequence and
+   // the backend rejected the JSON
+   int copied = StringToCharArray(json, data, 0, WHOLE_ARRAY, CP_UTF8);
+   if(copied > 0)
+      ArrayResize(data, copied - 1);
+   else
+      ArrayResize(data, 0);
 
    string resHeaders = "";
    ResetLastError();
@@ -138,6 +171,8 @@ bool BridgePost(const string json)
    g_bridgeFailed++;
    if(code == -1)
    {
+      // transport failure - force a fresh ping on the next timer tick
+      g_bridgeReady = false;
       if(g_bridgeLastErr == 4060 && g_bridgeVerbose)
          Print("[Bridge] WebRequest blocked (4060). Tools > Options > Expert Advisors > add ",
                g_bridgeUrl, " to the allowed URLs.");

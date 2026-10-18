@@ -103,10 +103,37 @@ def _as_dict(obj: Any) -> Dict[str, Any]:
     asdict = getattr(obj, "_asdict", None)
     if callable(asdict):
         return dict(asdict())
+    # numpy structured row (MT5 candles) / slots object: read the real fields;
+    # the old dict(vars(obj)) last resort raised TypeError on a numpy row and
+    # killed the caller's whole tick, so nothing here may raise any more.
+    names = getattr(getattr(obj, "dtype", None), "names", None)
+    if names:
+        out: Dict[str, Any] = {}
+        for n in names:
+            try:
+                out[str(n)] = obj[n]
+            except Exception:
+                continue
+        if out:
+            return out
+    slots = getattr(obj, "__slots__", None) or getattr(obj, "_fields", None)
+    if slots:
+        out = {}
+        for s in slots:
+            try:
+                out[str(s)] = getattr(obj, s)
+            except Exception:
+                continue
+        if out:
+            return out
     try:
         return dict(obj)
     except (TypeError, ValueError):
-        return dict(vars(obj))
+        pass
+    try:
+        return dict(vars(obj))          # plain object carrying a __dict__
+    except TypeError:
+        return {}
 
 
 class GoldBot:
@@ -704,6 +731,15 @@ class GoldBot:
         if not info.trade_mode or not getattr(info, "trade_allowed", True):
             self._log("warn", "trading is disabled for this symbol")
             return
+
+        try:
+            from backend.market_watch import check_symbol_market_status
+            m_stat = check_symbol_market_status(sym, info, tick, mt5_client=mt5)
+            if not m_stat.get("open", True):
+                self._log("warn", f"market {sym} is closed ({m_stat.get('reason', 'CLOSED')}) - not arming")
+                return
+        except Exception:
+            pass
 
         spread = float(tick.ask) - float(tick.bid)
         max_spread = float(self.cfg.get("max_spread") or 0.0)

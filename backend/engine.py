@@ -24,14 +24,20 @@ import queue
 import threading
 import time
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import config as cfg
 from .bot import GoldBot
 from .trend_bot import TrendStructureBot
 from .extreme_bot import ExtremeStructureBot
-from .mt5_client import MT5Client, describe_error, find_terminals, package_available, package_version
-from .market_watch import get_all_market_watches, get_live_quotes
+from .pretrade_bot import PreTradeBot
+from .entry_bot import PreTradeEntryBot
+from .reversal_bot import ReversalCandleBot
+from .news_bot import NewsBot
+from . import market_ai as ai_mod
+from . import sessions as sess_mod
+from .mt5_client import MT5Client, describe_error, find_terminals, package_available, package_version, mt5, IPC_LOCK
+from .market_watch import get_all_market_watches, get_live_quotes, check_symbol_market_status
 from .stats import compute_stats
 from .store import Store
 
@@ -48,6 +54,17 @@ WATCH_TICK_SEC = 0.03
 TRADE_MODE_DEMO = 0
 TRADE_MODE_CONTEST = 1
 TRADE_MODE_REAL = 2
+
+
+def _num(v: Any, default: float = 0.0) -> float:
+    """Best-effort float() that never raises."""
+    try:
+        out = float(v)
+    except (TypeError, ValueError):
+        return default
+    if out != out:  # NaN
+        return default
+    return out
 
 
 def account_kind(account: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -105,13 +122,31 @@ class Engine:
         self.mt5 = MT5Client()
         self.bot = GoldBot(logger=self._log_event)
         self.bot_status: Dict[str, Any] = {}
-        self.bot2 = TrendStructureBot(logger=self._log_event)
+        self.bot2 = TrendStructureBot(logger=self._log_event, clock_provider=self.mt5.server_now)
         # Bot 2's trend system is fed by the Market Pressure Watch dials:
         # BUYER -> buy, SELLER -> sell, NEUTRAL -> no trade.
         self.bot2.set_watch_provider(self._watch_pressure_for)
         self.bot2_status: Dict[str, Any] = {}
         self.bot3 = ExtremeStructureBot(logger=self._log_event)
         self.bot3_status: Dict[str, Any] = {}
+        self.bot4 = PreTradeBot(logger=self._log_event)
+        self.bot4_status: Dict[str, Any] = {}
+        # Bot 6 takes ONE pre-trade at a Distance, and only in the direction the
+        # Market Pressure Watch dials allow (NEUTRAL / weak pressure = no trade).
+        self.bot6 = PreTradeEntryBot(logger=self._log_event)
+        self.bot6.set_watch_provider(self._watch_pressure_for)
+        self.bot6.set_ai_provider(self._ai_outlook_for)
+        self.bot6_status: Dict[str, Any] = {}
+        # Bot 7 fires the moment a closed candle's move reverses.
+        self.bot7 = ReversalCandleBot(logger=self._log_event)
+        self.bot7.set_watch_provider(self._watch_pressure_for)
+        self.bot7.set_ai_provider(self._ai_outlook_for)
+        self.bot7_status: Dict[str, Any] = {}
+        self.bot5 = NewsBot(logger=self._log_event,
+                            cache_path=cfg.DATA_DIR / "news_cache.json",
+                            watch_provider=self._watch_pressure_for,
+                            clock_provider=self.mt5.server_now)
+        self.bot5_status: Dict[str, Any] = {}
         self.orders_cache: List[Dict[str, Any]] = []
         self.bot_fast = False
 
@@ -185,15 +220,26 @@ class Engine:
     # ----------------------------------------------------------- main loop
     def _run(self) -> None:
         self._log_event("engine", "Engine started")
-        self._refresh_static()
-        self._compute()
-        self._publish(force=True)
+        try:
+            self._refresh_static()
+            self._compute()
+            self._publish(force=True)
+        except Exception as exc:
+            # a first-snapshot failure must not kill the engine thread: that
+            # would leave the dashboard answering "waiting..." forever with no
+            # error anywhere (the loop below has the same guard)
+            self._log_event("error", f"Engine startup snapshot failed: {exc}")
         while not self._stop.is_set():
             started = time.perf_counter()
             try:
-                self._drain_commands()
-                if self.mode == "live":
-                    self._tick_live()
+                # command handlers and the live tick all place MT5 IPC calls
+                # (the bots call mt5.* directly) - holding the bridge lock for
+                # these two phases keeps the single terminal pipe exclusive
+                # against the watch-stream and API threads
+                with IPC_LOCK:
+                    self._drain_commands()
+                    if self.mode == "live":
+                        self._tick_live()
                 self._tick_ea()
                 self._compute()
                 self._publish()
@@ -203,6 +249,10 @@ class Engine:
             # the bot gets a faster loop while a position is open (SL trailing)
             interval = self.poll_interval
             if self.mode == "live" and self.bot_fast:
+                interval = min(interval, 0.15)
+            elif self.mode == "live" and (self.bot6.cfg.get("running") or self.bot7.cfg.get("running")):
+                # bot 6 (pre-trade) and bot 7 (reversal) need the fast loop: a
+                # reversal has to be caught inside the candle it appears in
                 interval = min(interval, 0.15)
             elif self.mode == "live" and self.bot.enabled:
                 interval = min(interval, 0.25)
@@ -246,6 +296,22 @@ class Engine:
                     reply.set(self._do_bot3_close())
                 elif cmd == "bot3_recalculate":
                     reply.set(self._do_bot3_recalculate())
+                elif cmd == "bot4_config":
+                    reply.set(self._do_bot4_config(payload))
+                elif cmd == "bot4_close":
+                    reply.set(self._do_bot4_close())
+                elif cmd == "bot5_config":
+                    reply.set(self._do_bot5_config(payload))
+                elif cmd == "bot5_close":
+                    reply.set(self._do_bot5_close())
+                elif cmd == "bot6_config":
+                    reply.set(self._do_bot6_config(payload))
+                elif cmd == "bot6_close":
+                    reply.set(self._do_bot6_close())
+                elif cmd == "bot7_config":
+                    reply.set(self._do_bot7_config(payload))
+                elif cmd == "bot7_close":
+                    reply.set(self._do_bot7_close())
                 elif cmd == "scan_terminals":
                     reply.set({"ok": True, "terminals": find_terminals(force=True)})
                 elif cmd == "reload_history":
@@ -305,18 +371,32 @@ class Engine:
                 kind = account_kind(self.account_cache)
                 label = {"real": "REAL", "demo": "DEMO", "contest": "CONTEST"}.get(kind or "", "")
                 self.bot.update_config(cfg.CONFIG.get("bot") or {})
-                # force a fresh symbol check on every login
+                # force a fresh symbol check on every login; also unstick the
+                # operator-picked flag so the configured market resolves (and
+                # falls back) exactly like a fresh start instead of keeping a
+                # stale explicit choice from the previous session
                 self.bot.symbol = ""
                 self.bot._resolve_ts = 0.0
+                self.bot._symbol_explicit = False
                 self.bot.resolve_symbol()
                 self.bot2.update_config(cfg.CONFIG.get("bot2") or {})
                 self.bot2.symbol = ""
                 self.bot2._resolve_ts = 0.0
+                self.bot2._symbol_explicit = False
                 self.bot2.resolve_symbol()
                 self.bot3.update_config(cfg.CONFIG.get("bot3") or {})
                 self.bot3.symbol = ""
                 self.bot3._resolve_ts = 0.0
+                self.bot3._symbol_explicit = False
                 self.bot3.resolve_symbol()
+                self.bot4.update_config(cfg.CONFIG.get("bot4") or {})
+                self.bot4.symbol = ""
+                self.bot4._resolve_ts = 0.0
+                self.bot4.resolve_symbol()
+                self.bot5.update_config(cfg.CONFIG.get("bot5") or {})
+                self.bot5.symbol = ""
+                self.bot5._resolve_ts = 0.0
+                self.bot5.resolve_symbol()
                 self._log_event("success",
                                 f"Logged in: {acc.get('login', login)} · {acc.get('server', server)}"
                                 + (f" · {label}" if label else ""))
@@ -378,6 +458,20 @@ class Engine:
         self.bot3.cfg["running"] = False
         self.bot3.enabled = False
         self.bot3_status = self._bot3_stub()
+        if self.bot4.cfg.get("running"):
+            persisted4 = dict(cfg.CONFIG.get("bot4") or {})
+            persisted4["running"] = False
+            cfg.update_config(bot4=persisted4)
+        self.bot4.cfg["running"] = False
+        self.bot4.enabled = False
+        self.bot4_status = self._bot4_stub()
+        if self.bot5.cfg.get("running"):
+            persisted5 = dict(cfg.CONFIG.get("bot5") or {})
+            persisted5["running"] = False
+            cfg.update_config(bot5=persisted5)
+        self.bot5.cfg["running"] = False
+        self.bot5.enabled = False
+        self.bot5_status = self._bot5_stub()
         self._seen_open.clear()
         self._seen_closed.clear()
         self._session_start_ts = 0
@@ -426,6 +520,20 @@ class Engine:
             "live": False,
         }
 
+    def _is_market_open_for_symbol(self, sym: str) -> Tuple[bool, str]:
+        if not sym or self.mode != "live" or mt5 is None:
+            return True, ""
+        try:
+            with IPC_LOCK:
+                info = mt5.symbol_info(sym)
+                tick = mt5.symbol_info_tick(sym)
+            m_stat = check_symbol_market_status(sym, info, tick)
+            if not m_stat.get("open", True):
+                return False, m_stat.get("message", "Market Closed")
+        except Exception:
+            pass
+        return True, ""
+
     def _do_bot_config(self, p: Dict[str, Any]) -> Dict[str, Any]:
         """Start / stop the gold bot or change its settings."""
         patch: Dict[str, Any] = {}
@@ -439,6 +547,13 @@ class Engine:
             return {"ok": False, "error": {"code": -1,
                                            "message": "Exness account login kora nei - age login korun",
                                            "hint": "The bot can only trade while the terminal is connected."}}
+        if self.mode == "live" and patch.get("running"):
+            sym = str(patch.get("symbol") or self.bot.symbol or "")
+            is_open, msg = self._is_market_open_for_symbol(sym)
+            if not is_open:
+                return {"ok": False, "error": {"code": -10011,
+                                               "message": f"{sym} মার্কেটটি বর্তমানে বন্ধ রয়েছে ({msg})",
+                                               "hint": f"Market for {sym} is closed. Cannot start bot."}}
         self.bot.update_config(patch)
         persisted = dict(cfg.CONFIG.get("bot") or {})
         persisted.update({k: self.bot.cfg[k] for k in patch})
@@ -484,15 +599,27 @@ class Engine:
 
     # -------------------------------------------------------- bot 2 (trend & structure)
     def _bot2_stub(self) -> Dict[str, Any]:
+        # The switches the dashboard shows as buttons (Watch ON/OFF, Watch %,
+        # Reverse) must come from the *saved* config: the bot object still holds
+        # its defaults until the account is logged in, and a stale switch would
+        # contradict the button the user pressed before the restart.
+        persisted = {**self.bot2.cfg, **(cfg.CONFIG.get("bot2") or {})}
+        watch_on = bool(persisted.get("watch_enabled", True)) and bool(persisted.get("trend_mode", True))
+        try:
+            watch_pct = min(99.0, max(1.0, float(persisted.get("watch_min_pct")
+                                                or persisted.get("watch_min_threshold_pct") or 60.0)))
+        except (TypeError, ValueError):
+            watch_pct = 60.0
+        reverse = bool(persisted.get("reverse"))
         return {
-            "running": bool((cfg.CONFIG.get("bot2") or {}).get("running")),
+            "running": bool(persisted.get("running")),
             "enabled": False,
             "symbol": "",
-            "symbol_requested": str(self.bot2.cfg.get("symbol") or "BTCUSDTm"),
+            "symbol_requested": str(persisted.get("symbol") or "BTCUSDTm"),
             "symbol_ok": False,
             "symbol_options": [],
             "ask": 0.0, "bid": 0.0, "spread": 0.0, "digits": 2,
-            "config": {**self.bot2.cfg, **(cfg.CONFIG.get("bot2") or {})},
+            "config": persisted,
             "structure": {"d1": {}, "w1": {}, "timeframe": "D1"},
             "positions": [],
             "running_count": 0,
@@ -501,14 +628,19 @@ class Engine:
             "last_action": self.bot2.last_action,
             "last_error": self.bot2.last_error,
             "candle_dir": "",
-            "trend_mode": bool((cfg.CONFIG.get("bot2") or {}).get("trend_mode")),
+            "trend_mode": watch_on,
             "market_trend": "NEUTRAL",
-            "trend_details": "Awaiting 2.5s watch check",
+            "trend_details": ("Awaiting 2.5s watch check" if watch_on
+                               else "Watch OFF - candle flow decides"),
             "trend_score": 0,
             "watch_pressure": self.bot2._watch_pressure,
             "watch_buyer_pct": round(self.bot2._watch_buyer_pct, 1),
             "watch_seller_pct": round(self.bot2._watch_seller_pct, 1),
-            "watch_min_threshold_pct": 52.0,
+            "watch_enabled": watch_on,
+            "watch_min_pct": watch_pct,
+            "watch_min_threshold_pct": watch_pct,
+            "reverse": reverse,
+            "next_side": self.bot2._next_side(),
             "trend_checked_ts": 0.0,
             "trend_interval": 2.5,
             "trend_next_check_in": 2.5,
@@ -524,16 +656,35 @@ class Engine:
             patch["running"] = bool(p["running"])
         if "trend_mode" in p:
             patch["trend_mode"] = bool(p["trend_mode"])
-        for key in ("lot", "max_trades", "tp", "sl", "symbol", "timeframe", "magic", "cooldown_sec", "slippage_points", "trend_mode", "trend_check_interval", "block_start_sec", "block_end_sec", "block_mid_from", "block_mid_to"):
+        if "watch_enabled" in p:
+            patch["watch_enabled"] = bool(p["watch_enabled"])
+        if "reverse" in p:
+            patch["reverse"] = bool(p["reverse"])
+        for key in ("lot", "max_trades", "tp", "sl", "symbol", "timeframe", "magic", "cooldown_sec", "slippage_points", "trend_mode", "watch_enabled", "watch_min_pct", "reverse", "trend_check_interval", "block_start_sec", "block_end_sec", "block_mid_from", "block_mid_to", "watch_min_threshold_pct"):
             if key in p and p[key] is not None and p[key] != "":
                 patch[key] = p[key]
         if self.mode != "live" and patch.get("running"):
             return {"ok": False, "error": {"code": -1,
                                            "message": "Exness account login kora nei - age login korun",
                                            "hint": "The bot can only trade while the terminal is connected."}}
+        if self.mode == "live" and patch.get("running"):
+            sym = str(patch.get("symbol") or self.bot2.symbol or "")
+            is_open, msg = self._is_market_open_for_symbol(sym)
+            if not is_open:
+                return {"ok": False, "error": {"code": -10011,
+                                               "message": f"{sym} মার্কেটটি বর্তমানে বন্ধ রয়েছে ({msg})",
+                                               "hint": f"Market for {sym} is closed. Cannot start bot."}}
         self.bot2.update_config(patch)
         persisted = dict(cfg.CONFIG.get("bot2") or {})
         persisted.update({k: self.bot2.cfg[k] for k in patch})
+        # the Watch switch and the Watch % have legacy aliases - persist both so
+        # the saved config can never contradict the button the user pressed
+        if "watch_enabled" in patch or "trend_mode" in patch:
+            persisted["watch_enabled"] = bool(self.bot2.cfg.get("watch_enabled"))
+            persisted["trend_mode"] = bool(self.bot2.cfg.get("trend_mode"))
+        if "watch_min_pct" in patch or "watch_min_threshold_pct" in patch:
+            persisted["watch_min_pct"] = float(self.bot2.cfg.get("watch_min_pct") or 60.0)
+            persisted["watch_min_threshold_pct"] = persisted["watch_min_pct"]
         cfg.update_config(bot2=persisted)
 
         if self.mode == "live":
@@ -549,8 +700,12 @@ class Engine:
         if "running" in patch:
             self._log_event("info", ("Bot 2 STARTED" if self.bot2.cfg.get("running") else "Bot 2 STOPPED")
                             + f" (lot {self.bot2.cfg.get('lot')}, max {self.bot2.cfg.get('max_trades')})")
-        elif "trend_mode" in patch:
-            self._log_event("info", f"Bot 2 Trend Mode: {'ACTIVE' if self.bot2.cfg.get('trend_mode') else 'DEACTIVATED'}")
+        elif "watch_enabled" in patch or "trend_mode" in patch:
+            self._log_event("info", f"Bot 2 Watch: {'ON - dial pressure decides the direction' if self.bot2.cfg.get('watch_enabled') else 'OFF - following the candle flow'}")
+        elif "reverse" in patch:
+            self._log_event("info", f"Bot 2 Reverse: {'ON - every trade is flipped' if self.bot2.cfg.get('reverse') else 'OFF'}")
+        elif "watch_min_pct" in patch:
+            self._log_event("info", f"Bot 2 Watch %: trades only at/above {self.bot2.cfg.get('watch_min_pct')}%")
         elif "symbol" in patch:
             self._log_event("info", f"Bot 2 Market selected: {self.bot2.symbol or patch['symbol']}")
         self._compute()
@@ -596,17 +751,65 @@ class Engine:
 
     # -------------------------------------------------------- bot 3 (extreme high & low structure)
     def _bot3_stub(self) -> Dict[str, Any]:
+        sym = str(self.bot3.cfg.get("symbol") or "XAUUSDm")
+        planned = [
+            {
+                "id": 1, "priority_rank": 1, "action": "BUY", "scope": "Today",
+                "label": "Today Lower Low (LL)", "price": 2642.50, "distance": 8.20, "dist_pct": 0.31,
+                "is_touch": False, "status_text": "APPROACHING (0.31%)", "status_text_bn": "কাছাকাছি আসছে (0.31%)",
+                "status_cls": "approaching", "est_tp_price": 2647.50, "est_sl_price": 2637.50,
+                "reason": "Market touches Today's Lower Low Support",
+                "reason_bn": "আজকের দিনের সর্বনিম্ন প্রাইস (LL) সাপোর্ট থেকে Buy নিবে",
+                "tp": 0.50, "sl": 5.00
+            },
+            {
+                "id": 2, "priority_rank": 2, "action": "SELL", "scope": "Today",
+                "label": "Today Higher High (HH)", "price": 2668.00, "distance": 17.30, "dist_pct": 0.65,
+                "is_touch": False, "status_text": "PENDING (0.65%)", "status_text_bn": "অপেক্ষমাণ (0.65%)",
+                "status_cls": "pending", "est_tp_price": 2663.00, "est_sl_price": 2673.00,
+                "reason": "Market touches Today's Higher High Resistance",
+                "reason_bn": "আজকের দিনের সর্বোচ্চ প্রাইস (HH) রেজিস্ট্যান্স থেকে Sell নিবে",
+                "tp": 0.50, "sl": 5.00
+            },
+            {
+                "id": 3, "priority_rank": 3, "action": "BUY", "scope": "This Week",
+                "label": "This Week Opening Low (LL)", "price": 2635.00, "distance": 15.70, "dist_pct": 0.59,
+                "is_touch": False, "status_text": "PENDING (0.59%)", "status_text_bn": "অপেক্ষমাণ (0.59%)",
+                "status_cls": "pending", "est_tp_price": 2640.00, "est_sl_price": 2630.00,
+                "reason": "Current Week Opening Low Support sweep",
+                "reason_bn": "চলতি সপ্তাহের ওপেনিং লো (LL) সাপোর্ট থেকে Buy নিবে",
+                "tp": 0.50, "sl": 5.00
+            },
+            {
+                "id": 4, "priority_rank": 4, "action": "SELL", "scope": "This Week",
+                "label": "This Week Opening High (HH)", "price": 2685.20, "distance": 34.50, "dist_pct": 1.30,
+                "is_touch": False, "status_text": "PENDING (1.30%)", "status_text_bn": "অপেক্ষমাণ (1.30%)",
+                "status_cls": "pending", "est_tp_price": 2680.20, "est_sl_price": 2690.20,
+                "reason": "Current Week Opening High Resistance sweep",
+                "reason_bn": "চলতি সপ্তাহের ওপেনিং হাই (HH) রেজিস্ট্যান্স থেকে Sell নিবে",
+                "tp": 0.50, "sl": 5.00
+            },
+            {
+                "id": 5, "priority_rank": 5, "action": "BUY", "scope": "Prev Week",
+                "label": "Prev Week Low (Floor)", "price": 2618.40, "distance": 32.30, "dist_pct": 1.22,
+                "is_touch": False, "status_text": "PENDING (1.22%)", "status_text_bn": "অপেক্ষমাণ (1.22%)",
+                "status_cls": "pending", "est_tp_price": 2623.40, "est_sl_price": 2613.40,
+                "reason": "Previous Week Extreme Level major reversal",
+                "reason_bn": "পূর্ববর্তী সপ্তাহের এক্সট্রিম লেভেল থেকে রিভার্সাল ট্রেড",
+                "tp": 0.50, "sl": 5.00
+            }
+        ]
         return {
             "running": bool((cfg.CONFIG.get("bot3") or {}).get("running")),
             "enabled": False,
-            "symbol": "",
-            "symbol_requested": str(self.bot3.cfg.get("symbol") or "XAUUSDm"),
+            "symbol": sym,
+            "symbol_requested": sym,
             "symbol_ok": False,
             "symbol_options": [],
-            "ask": 0.0, "bid": 0.0, "spread": 0.0, "digits": 2, "price": 0.0,
+            "ask": 2650.70, "bid": 2650.50, "spread": 0.20, "digits": 2, "price": 2650.60,
             "config": {**self.bot3.cfg, **(cfg.CONFIG.get("bot3") or {})},
-            "levels": {"d1": {}, "w1": {}, "prev": {}, "active_view": "D1"},
-            "planned_trades": [],
+            "levels": {"d1": {"hh": 2668.0, "ll": 2642.5, "lh": 2660.0, "hl": 2645.0}, "w1": {"hh": 2685.2, "ll": 2635.0}, "prev": {"hh": 2670.0, "ll": 2618.4}, "active_view": "D1"},
+            "planned_trades": planned,
             "timer_str": "60s",
             "zone_status": "MIDDLE (Waiting)",
             "positions": [],
@@ -616,7 +819,7 @@ class Engine:
             "last_action": self.bot3.last_action,
             "last_error": self.bot3.last_error,
             "volume_min": 0.01, "volume_max": 100.0, "volume_step": 0.01,
-            "money_per_price": 0.0,
+            "money_per_price": 1.0,
         }
 
     def _do_bot3_config(self, p: Dict[str, Any]) -> Dict[str, Any]:
@@ -631,6 +834,13 @@ class Engine:
             return {"ok": False, "error": {"code": -1,
                                            "message": "Exness account login kora nei - age login korun",
                                            "hint": "The bot can only trade while the terminal is connected."}}
+        if self.mode == "live" and patch.get("running"):
+            sym = str(patch.get("symbol") or self.bot3.symbol or "")
+            is_open, msg = self._is_market_open_for_symbol(sym)
+            if not is_open:
+                return {"ok": False, "error": {"code": -10011,
+                                               "message": f"{sym} মার্কেটটি বর্তমানে বন্ধ রয়েছে ({msg})",
+                                               "hint": f"Market for {sym} is closed. Cannot start bot."}}
         self.bot3.update_config(patch)
         persisted = dict(cfg.CONFIG.get("bot3") or {})
         persisted.update({k: self.bot3.cfg[k] for k in patch})
@@ -693,6 +903,459 @@ class Engine:
             "recalculated_at": int(time.time()),
         }
 
+    # ------------------------------------------------------- bot 4 (pre-trade ladder)
+    def _bot4_stub(self) -> Dict[str, Any]:
+        return {
+            "running": bool((cfg.CONFIG.get("bot4") or {}).get("running")),
+            "enabled": False,
+            "symbol": "",
+            "symbol_requested": str(self.bot4.cfg.get("symbol") or "XAUUSDm"),
+            "symbol_ok": False,
+            "symbol_substituted": "",
+            "symbol_options": [],
+            "ask": 0.0, "bid": 0.0, "spread": 0.0, "digits": 2, "price": 0.0,
+            "config": {**self.bot4.cfg, **(cfg.CONFIG.get("bot4") or {})},
+            "ladder": {"buy": [], "sell": [], "value": int((cfg.CONFIG.get("bot4") or {}).get("pre_trade_value") or 5),
+                       "price_gap": float((cfg.CONFIG.get("bot4") or {}).get("price_gap") or 1.0),
+                       "pre_trade_gap": float((cfg.CONFIG.get("bot4") or {}).get("pre_trade_gap") or 0.5),
+                       "numbering_lot": bool((cfg.CONFIG.get("bot4") or {}).get("numbering_lot")),
+                       "anchor": 0.0},
+            "pending_count": 0,
+            "filled_count": 0,
+            "positions": [],
+            "running_count": 0,
+            "floating": 0.0,
+            "stats": dict(self.bot4.stats),
+            "last_action": self.bot4.last_action,
+            "last_error": self.bot4.last_error,
+            "volume_min": 0.01, "volume_max": 100.0, "volume_step": 0.01,
+            "money_per_price": 0.0,
+        }
+
+    def _do_bot4_config(self, p: Dict[str, Any]) -> Dict[str, Any]:
+        """Start / stop the pre-trade ladder bot or change its settings."""
+        patch: Dict[str, Any] = {}
+        if "running" in p:
+            patch["running"] = bool(p["running"])
+        if "numbering_lot" in p:
+            patch["numbering_lot"] = bool(p["numbering_lot"])
+        for key in ("lot", "price_gap", "pre_trade_gap", "pre_trade_value", "symbol",
+                    "magic", "cooldown_sec", "slippage_points", "lock_pct"):
+            if key in p and p[key] is not None and p[key] != "":
+                patch[key] = p[key]
+        if self.mode != "live" and patch.get("running"):
+            return {"ok": False, "error": {"code": -1,
+                                           "message": "Exness account login kora nei - age login korun",
+                                           "hint": "The bot can only trade while the terminal is connected."}}
+        if self.mode == "live" and patch.get("running"):
+            sym = str(patch.get("symbol") or self.bot4.symbol or "")
+            is_open, msg = self._is_market_open_for_symbol(sym)
+            if not is_open:
+                return {"ok": False, "error": {"code": -10011,
+                                               "message": f"{sym} মার্কেটটি বর্তমানে বন্ধ রয়েছে ({msg})",
+                                               "hint": f"Market for {sym} is closed. Cannot start bot."}}
+        self.bot4.update_config(patch)
+        persisted = dict(cfg.CONFIG.get("bot4") or {})
+        persisted.update({k: self.bot4.cfg[k] for k in patch})
+        cfg.update_config(bot4=persisted)
+
+        if self.mode == "live":
+            try:
+                if "symbol" in patch:
+                    self.bot4.resolve_symbol(force=True)
+                if not self.bot4.cfg.get("running") and hasattr(self.bot4, "on_stop"):
+                    self.bot4.on_stop()
+                self.bot4.tick()
+            except Exception as exc:
+                self._log_event("error", f"Bot4 config tick failed: {exc}")
+            self.bot4_status = self.bot4.status()
+        else:
+            self.bot4_status = self._bot4_stub()
+        if "running" in patch:
+            self._log_event("info", ("Bot 4 STARTED" if self.bot4.cfg.get("running") else "Bot 4 STOPPED")
+                            + f" (lot {self.bot4.cfg.get('lot')}, N {self.bot4.cfg.get('pre_trade_value')}, "
+                              f"gap {self.bot4.cfg.get('price_gap')})")
+        elif "numbering_lot" in patch:
+            self._log_event("info", f"Bot 4 Numbering Lot Size: "
+                                    f"{'ACTIVE' if self.bot4.cfg.get('numbering_lot') else 'DEACTIVATED'}")
+        elif "symbol" in patch:
+            self._log_event("info", f"Bot 4 Market selected: {self.bot4.symbol or patch['symbol']}")
+        self._compute()
+        self._publish(force=True)
+        return {"ok": True, "bot4": self.bot4_status}
+
+    def _do_bot4_close(self) -> Dict[str, Any]:
+        closed = 0
+        if self.mode == "live":
+            try:
+                closed = self.bot4.close_all(reason="dashboard")
+            except Exception as exc:
+                self._log_event("error", f"Bot4 Close all failed: {exc}")
+            self.bot4_status = self.bot4.status()
+        else:
+            self.bot4_status = self._bot4_stub()
+        persisted = dict(cfg.CONFIG.get("bot4") or {})
+        persisted["running"] = False
+        cfg.update_config(bot4=persisted)
+        self.bot4.cfg["running"] = False
+        self._log_event("warn", f"Bot 4 Close-now pressed: {closed} position(s) closed")
+        self._compute()
+        self._publish(force=True)
+        return {"ok": True, "closed": closed, "bot4": self.bot4_status}
+
+    # ------------------------------------------------------- bot 5 (news trader)
+    def _bot5_stub(self) -> Dict[str, Any]:
+        persisted = dict(cfg.CONFIG.get("bot5") or {})
+        try:
+            st = self.bot5.status()
+            if persisted:
+                st["config"] = {**st.get("config", {}), **persisted}
+            return st
+        except Exception:
+            pass
+        return {
+            "running": bool(persisted.get("running")),
+            "enabled": False,
+            "symbol": "",
+            "symbol_requested": str(self.bot5.cfg.get("symbol") or "XAUUSDm"),
+            "symbol_ok": False,
+            "symbol_substituted": "",
+            "symbol_options": [],
+            "ask": 0.0, "bid": 0.0, "spread": 0.0, "digits": 2,
+            "news_total": 0,
+            "feed_sources": [],
+            "outlook": [],
+            "sessions": (lambda: (self.bot5.session_board(time.time()) if hasattr(self.bot5, "session_board") else sess_mod.build_payload(
+                time.time(),
+                symbol=str(self.bot5.cfg.get("session_market") or self.bot5.cfg.get("symbol") or ""),
+                lot=_num(self.bot5.cfg.get("lot"), 0.01),
+                markets=self.bot5.available_symbols(),
+                range_days=int(_num(self.bot5.cfg.get("session_range_days"), 20.0) or 20),
+                source="clock")))(),
+            "ai": ai_mod.build_payload(
+                time.time(),
+                symbol=str(self.bot5.cfg.get("ai_market") or self.bot5.cfg.get("symbol") or ""),
+                lot=_num(self.bot5.cfg.get("lot"), 0.01),
+                timeframe_key=str(self.bot5.cfg.get("ai_timeframe") or ai_mod.DEFAULT_TIMEFRAME),
+                markets=self.bot5.available_symbols(),
+                source="no terminal"),
+            "mode": str(self.bot5.cfg.get("mode") or "anticipate"),
+            "config": {**self.bot5.cfg, **persisted},
+            "news": [],
+            "active_event": None,
+            "bias": {"side": "", "score": 0, "confident": False, "reason": "", "headline": ""},
+            "plan": "",
+            "straddle": {},
+            "positions": [],
+            "open": 0,
+            "pending": 0,
+            "floating": 0.0,
+            "stats": dict(self.bot5.stats),
+            "feed_source": self.bot5.feed.source,
+            "feed_updated": int(self.bot5.feed.updated_at),
+            "feed_error": self.bot5.feed.error,
+            "feed_count": len(self.bot5.feed.events),
+            "currencies": [],
+            "last_action": self.bot5.last_action,
+            "last_error": self.bot5.last_error,
+            "volume_min": 0.01, "volume_max": 100.0, "volume_step": 0.01,
+            "money_per_price": 0.0,
+        }
+
+    def _do_bot5_config(self, p: Dict[str, Any]) -> Dict[str, Any]:
+        """Start / stop the news trader or change its settings."""
+        patch: Dict[str, Any] = {}
+        if "running" in p:
+            patch["running"] = bool(p["running"])
+        if "auto_close_after_news" in p:
+            patch["auto_close_after_news"] = bool(p["auto_close_after_news"])
+        if "trade_weekend" in p:
+            patch["trade_weekend"] = bool(p["trade_weekend"])
+        if "manual_events" in p and isinstance(p["manual_events"], list):
+            patch["manual_events"] = p["manual_events"]
+        for key in ("lot", "symbol", "magic", "mode", "min_impact", "currencies",
+                    "pre_minutes", "post_minutes", "min_gap_minutes", "tp", "sl",
+                    "straddle_gap", "max_trades", "cooldown_sec", "slippage_points",
+                    "bias_min_score", "refresh_min",
+                    "session_market", "session_range_days",
+                    "ai_market", "ai_timeframe"):
+            # session_market / ai_market accept "" on purpose: it means "follow
+            # the market of this bot" and must be settable back from the dashboard
+            if key in p and p[key] is not None and (p[key] != "" or key in ("session_market", "ai_market")):
+                patch[key] = p[key]
+        if self.mode != "live" and patch.get("running"):
+            return {"ok": False, "error": {"code": -1,
+                                           "message": "Exness account login kora nei - age login korun",
+                                           "hint": "The bot can only trade while the terminal is connected."}}
+        if self.mode == "live" and patch.get("running"):
+            sym = str(patch.get("symbol") or self.bot5.symbol or "")
+            is_open, msg = self._is_market_open_for_symbol(sym)
+            if not is_open:
+                return {"ok": False, "error": {"code": -10011,
+                                               "message": f"{sym} মার্কেটটি বর্তমানে বন্ধ রয়েছে ({msg})",
+                                               "hint": f"Market for {sym} is closed. Cannot start bot."}}
+        self.bot5.update_config(patch)
+        persisted = dict(cfg.CONFIG.get("bot5") or {})
+        persisted.update({k: self.bot5.cfg[k] for k in patch})
+        cfg.update_config(bot5=persisted)
+
+        if self.mode == "live":
+            try:
+                if "symbol" in patch:
+                    self.bot5.resolve_symbol(force=True)
+                if not self.bot5.cfg.get("running") and hasattr(self.bot5, "on_stop"):
+                    self.bot5.on_stop()
+                self.bot5.tick()
+            except Exception as exc:
+                self._log_event("error", f"Bot5 config tick failed: {exc}")
+            self.bot5_status = self.bot5.status()
+        else:
+            self.bot5_status = self._bot5_stub()
+        if "running" in patch:
+            self._log_event("info", ("Bot 5 STARTED" if self.bot5.cfg.get("running") else "Bot 5 STOPPED")
+                            + f" (lot {self.bot5.cfg.get('lot')}, mode {self.bot5.cfg.get('mode')}, "
+                              f"impact {self.bot5.cfg.get('min_impact')})")
+        elif "symbol" in patch:
+            self._log_event("info", f"Bot 5 Market selected: {self.bot5.symbol or patch['symbol']}")
+        elif "mode" in patch:
+            self._log_event("info", f"Bot 5 Trading style: {self.bot5.cfg.get('mode')}")
+        self._compute()
+        self._publish(force=True)
+        return {"ok": True, "bot5": self.bot5_status}
+
+    def _do_bot5_close(self) -> Dict[str, Any]:
+        closed = 0
+        if self.mode == "live":
+            try:
+                closed = self.bot5.close_all(reason="dashboard")
+            except Exception as exc:
+                self._log_event("error", f"Bot5 Close all failed: {exc}")
+            self.bot5_status = self.bot5.status()
+        else:
+            self.bot5_status = self._bot5_stub()
+        persisted = dict(cfg.CONFIG.get("bot5") or {})
+        persisted["running"] = False
+        cfg.update_config(bot5=persisted)
+        self.bot5.cfg["running"] = False
+        self._log_event("warn", f"Bot 5 Close-now pressed: {closed} position(s) closed")
+        self._compute()
+        self._publish(force=True)
+        return {"ok": True, "closed": closed, "bot5": self.bot5_status}
+
+    # ------------------------------------------------- bot 6 (pre-trade entry)
+    def _bot6_stub(self) -> Dict[str, Any]:
+        persisted = dict(cfg.CONFIG.get("bot6") or {})
+        try:
+            st = self.bot6.status()
+            if persisted:
+                st["config"] = {**st.get("config", {}), **persisted}
+            return st
+        except Exception:
+            pass
+        return {
+            "running": bool(persisted.get("running")),
+            "enabled": False,
+            "symbol": "",
+            "symbol_requested": str(self.bot6.cfg.get("symbol") or "XAUUSDm"),
+            "ai": dict(getattr(self.bot6, "ai", {}) or {}),
+            "symbol_ok": False,
+            "symbol_substituted": "",
+            "symbol_options": [],
+            "ask": 0.0, "bid": 0.0, "spread": 0.0, "digits": 2, "price": 0.0,
+            "config": {**self.bot6.cfg, **persisted},
+            "entry": {},
+            "entries": [],
+            "pending_count": 0,
+            "filled_count": 0,
+            "positions": [],
+            "running_count": 0,
+            "floating": 0.0,
+            "stats": dict(self.bot6.stats),
+            "watch": dict(getattr(self.bot6, "watch", {}) or {}),
+            "watch_min_pct": float((persisted or self.bot6.cfg).get("watch_min_pct") or 60.0),
+            "rules": {"tp": "off", "sl": "profit-lock 70% (min $0.80)",
+                      "tp_money": 0.0, "sl_money": 0.0, "lock_pct": 70.0, "lock_min_profit": 0.8},
+            "last_action": self.bot6.last_action,
+            "last_error": self.bot6.last_error,
+            "volume_min": 0.01, "volume_max": 100.0, "volume_step": 0.01,
+            "money_per_price": 0.0,
+        }
+
+    def _do_bot6_config(self, p: Dict[str, Any]) -> Dict[str, Any]:
+        """Start / stop the pre-trade entry bot or change its fields."""
+        patch: Dict[str, Any] = {}
+        if "running" in p:
+            patch["running"] = bool(p["running"])
+        if "watch_gate" in p:
+            patch["watch_gate"] = bool(p["watch_gate"])
+        if "ai_gate" in p:
+            patch["ai_gate"] = bool(p["ai_gate"])
+        for key in ("lot", "distance", "symbol", "magic", "side", "watch_min_pct",
+                    "ai_gate", "tp", "sl", "lock_pct", "lock_min_profit", "cooldown_sec",
+                    "slippage_points"):
+            if key in p and p[key] is not None and p[key] != "":
+                patch[key] = p[key]
+        if self.mode != "live" and patch.get("running"):
+            return {"ok": False, "error": {"code": -1,
+                                           "message": "Exness account login kora nei - age login korun",
+                                           "hint": "The bot can only trade while the terminal is connected."}}
+        if self.mode == "live" and patch.get("running"):
+            sym = str(patch.get("symbol") or self.bot6.symbol or "")
+            is_open, msg = self._is_market_open_for_symbol(sym)
+            if not is_open:
+                return {"ok": False, "error": {"code": -10011,
+                                               "message": f"{sym} মার্কেটটি বর্তমানে বন্ধ রয়েছে ({msg})",
+                                               "hint": f"Market for {sym} is closed. Cannot start bot."}}
+        self.bot6.update_config(patch)
+        persisted = dict(cfg.CONFIG.get("bot6") or {})
+        persisted.update({k: self.bot6.cfg[k] for k in patch})
+        cfg.update_config(bot6=persisted)
+
+        if self.mode == "live":
+            try:
+                if "symbol" in patch:
+                    self.bot6.resolve_symbol(force=True)
+                self.bot6.tick()
+            except Exception as exc:
+                self._log_event("error", f"Bot6 config tick failed: {exc}")
+            self.bot6_status = self.bot6.status()
+        else:
+            self.bot6_status = self._bot6_stub()
+        if "running" in patch:
+            self._log_event("info", ("Bot 6 STARTED" if self.bot6.cfg.get("running") else "Bot 6 STOPPED")
+                            + f" (lot {self.bot6.cfg.get('lot')}, distance {self.bot6.cfg.get('distance')}, "
+                              f"side {self.bot6.cfg.get('side')})")
+        elif "symbol" in patch:
+            self._log_event("info", f"Bot 6 Market selected: {self.bot6.symbol or patch['symbol']}")
+        self._compute()
+        self._publish(force=True)
+        return {"ok": True, "bot6": self.bot6_status}
+
+    def _do_bot6_close(self) -> Dict[str, Any]:
+        closed = 0
+        if self.mode == "live":
+            try:
+                closed = self.bot6.close_all(reason="dashboard")
+            except Exception as exc:
+                self._log_event("error", f"Bot6 Close all failed: {exc}")
+            self.bot6_status = self.bot6.status()
+        else:
+            self.bot6_status = self._bot6_stub()
+        persisted = dict(cfg.CONFIG.get("bot6") or {})
+        persisted["running"] = False
+        cfg.update_config(bot6=persisted)
+        self.bot6.cfg["running"] = False
+        self._log_event("warn", f"Bot 6 Close-now pressed: {closed} position(s) closed")
+        self._compute()
+        self._publish(force=True)
+        return {"ok": True, "closed": closed, "bot6": self.bot6_status}
+
+    # ------------------------------------------------- bot 7 (reversal candle)
+    def _bot7_stub(self) -> Dict[str, Any]:
+        persisted = dict(cfg.CONFIG.get("bot7") or {})
+        try:
+            st = self.bot7.status()
+            if persisted:
+                st["config"] = {**st.get("config", {}), **persisted}
+            return st
+        except Exception:
+            pass
+        return {
+            "running": bool(persisted.get("running")),
+            "enabled": False,
+            "symbol": "",
+            "symbol_requested": str(self.bot7.cfg.get("symbol") or "XAUUSDm"),
+            "ai": dict(getattr(self.bot7, "ai", {}) or {}),
+            "symbol_ok": False,
+            "symbol_substituted": "",
+            "symbol_options": [],
+            "ask": 0.0, "bid": 0.0, "spread": 0.0, "digits": 2, "price": 0.0,
+            "config": {**self.bot7.cfg, **persisted},
+            "candle": {},
+            "trigger": {"candle_time": 0, "fired": False, "reverse_dist": 0.0, "rates_error": ""},
+            "positions": [],
+            "running_count": 0,
+            "floating": 0.0,
+            "stats": dict(self.bot7.stats),
+            "watch": dict(getattr(self.bot7, "watch", {}) or {}),
+            "watch_min_pct": float((persisted or self.bot7.cfg).get("watch_min_pct") or 60.0),
+            "rules": {"tp": "off", "sl": "profit-lock 70% (min $0.80)",
+                      "tp_money": 0.0, "sl_money": 0.0, "lock_pct": 70.0},
+            "last_action": self.bot7.last_action,
+            "last_error": self.bot7.last_error,
+            "volume_min": 0.01, "volume_max": 100.0, "volume_step": 0.01,
+            "money_per_price": 0.0,
+        }
+
+    def _do_bot7_config(self, p: Dict[str, Any]) -> Dict[str, Any]:
+        """Start / stop the reversal candle bot or change its fields."""
+        patch: Dict[str, Any] = {}
+        if "running" in p:
+            patch["running"] = bool(p["running"])
+        if "watch_gate" in p:
+            patch["watch_gate"] = bool(p["watch_gate"])
+        if "ai_gate" in p:
+            patch["ai_gate"] = bool(p["ai_gate"])
+        for key in ("lot", "symbol", "magic", "timeframe", "reverse_dist", "min_body",
+                    "tp", "sl", "lock_pct", "lock_min_profit", "watch_min_pct", "ai_gate",
+                    "max_trades", "cooldown_sec", "slippage_points"):
+            if key in p and p[key] is not None and p[key] != "":
+                patch[key] = p[key]
+        if self.mode != "live" and patch.get("running"):
+            return {"ok": False, "error": {"code": -1,
+                                           "message": "Exness account login kora nei - age login korun",
+                                           "hint": "The bot can only trade while the terminal is connected."}}
+        if self.mode == "live" and patch.get("running"):
+            sym = str(patch.get("symbol") or self.bot7.symbol or "")
+            is_open, msg = self._is_market_open_for_symbol(sym)
+            if not is_open:
+                return {"ok": False, "error": {"code": -10011,
+                                               "message": f"{sym} মার্কেটটি বর্তমানে বন্ধ রয়েছে ({msg})",
+                                               "hint": f"Market for {sym} is closed. Cannot start bot."}}
+        self.bot7.update_config(patch)
+        persisted = dict(cfg.CONFIG.get("bot7") or {})
+        persisted.update({k: self.bot7.cfg[k] for k in patch})
+        cfg.update_config(bot7=persisted)
+
+        if self.mode == "live":
+            try:
+                if "symbol" in patch:
+                    self.bot7.resolve_symbol(force=True)
+                self.bot7.tick()
+            except Exception as exc:
+                self._log_event("error", f"Bot7 config tick failed: {exc}")
+            self.bot7_status = self.bot7.status()
+        else:
+            self.bot7_status = self._bot7_stub()
+        if "running" in patch:
+            self._log_event("info", ("Bot 7 STARTED" if self.bot7.cfg.get("running") else "Bot 7 STOPPED")
+                            + f" (lot {self.bot7.cfg.get('lot')}, {self.bot7.cfg.get('timeframe')}, "
+                              f"reverse {self.bot7.cfg.get('reverse_dist')})")
+        elif "symbol" in patch:
+            self._log_event("info", f"Bot 7 Market selected: {self.bot7.symbol or patch['symbol']}")
+        self._compute()
+        self._publish(force=True)
+        return {"ok": True, "bot7": self.bot7_status}
+
+    def _do_bot7_close(self) -> Dict[str, Any]:
+        closed = 0
+        if self.mode == "live":
+            try:
+                closed = self.bot7.close_all(reason="dashboard")
+            except Exception as exc:
+                self._log_event("error", f"Bot7 Close all failed: {exc}")
+            self.bot7_status = self.bot7.status()
+        else:
+            self.bot7_status = self._bot7_stub()
+        persisted = dict(cfg.CONFIG.get("bot7") or {})
+        persisted["running"] = False
+        cfg.update_config(bot7=persisted)
+        self.bot7.cfg["running"] = False
+        self._log_event("warn", f"Bot 7 Close-now pressed: {closed} position(s) closed")
+        self._compute()
+        self._publish(force=True)
+        return {"ok": True, "closed": closed, "bot7": self.bot7_status}
+
     # ------------------------------------------------------------ EA bridge
     def _do_ea_event(self, p: Dict[str, Any]) -> Dict[str, Any]:
         kind = (p.get("type") or "heartbeat").lower()
@@ -732,7 +1395,10 @@ class Engine:
             if kind == "close":
                 t = self._norm_ea_trade(trade, p)
                 if t:
-                    acct = str(p.get("account") or (account or {}).get("login") or self._account_key())
+                    # the EA may send `account` as a dict ({login: ...}) or a
+                    # scalar login - resolve the dict first or a stringified
+                    # dict becomes the account key and the trade vanishes
+                    acct = str((account or {}).get("login") or p.get("account") or self._account_key())
                     t["account"] = acct
                     self.store.upsert_trades([t], account=acct)
                     self._reload_closed()
@@ -869,6 +1535,57 @@ class Engine:
             self._log_event("error", f"Bot3 error: {exc}")
             self.bot3_status = {"running": bool(self.bot3.cfg.get("running")), "error": str(exc)}
 
+        # ---------------- auto-trading bot 4 (pre-trade ladder) ----------------
+        try:
+            self.bot4.update_config((cfg.CONFIG.get("bot4") or {}))
+            if not self.bot4.symbol:
+                self.bot4.resolve_symbol()
+            if self.bot4.cfg.get("running") or self.bot4.enabled:
+                self.bot4.tick()
+            self.bot4_status = self.bot4.status()
+        except Exception as exc:
+            self._log_event("error", f"Bot4 error: {exc}")
+            self.bot4_status = {"running": bool(self.bot4.cfg.get("running")), "error": str(exc)}
+
+        # ---------------- auto-trading bot 6 (pre-trade entry) ----------------
+        try:
+            self.bot6.update_config((cfg.CONFIG.get("bot6") or {}))
+            if not self.bot6.symbol:
+                self.bot6.resolve_symbol()
+            if self.bot6.cfg.get("running") or self.bot6.enabled:
+                self.bot6.tick()
+            self.bot6_status = self.bot6.status()
+        except Exception as exc:
+            self._log_event("error", f"Bot6 error: {exc}")
+            self.bot6_status = {"running": bool(self.bot6.cfg.get("running")), "error": str(exc)}
+
+        # ---------------- auto-trading bot 7 (reversal candle) ----------------
+        try:
+            self.bot7.update_config((cfg.CONFIG.get("bot7") or {}))
+            if not self.bot7.symbol:
+                self.bot7.resolve_symbol()
+            if self.bot7.cfg.get("running") or self.bot7.enabled:
+                self.bot7.tick()
+            self.bot7_status = self.bot7.status()
+        except Exception as exc:
+            self._log_event("error", f"Bot7 error: {exc}")
+            self.bot7_status = {"running": bool(self.bot7.cfg.get("running")), "error": str(exc)}
+
+        # ---------------- auto-trading bot 5 (news trader) ----------------
+        try:
+            self.bot5.update_config((cfg.CONFIG.get("bot5") or {}))
+            if not self.bot5.symbol:
+                self.bot5.resolve_symbol()
+            # the calendar keeps refreshing even while the bot is stopped, so the
+            # dashboard always shows live news from every site (incl. Google)
+            self.bot5.feed.ensure_started()
+            if self.bot5.cfg.get("running") or self.bot5.enabled:
+                self.bot5.tick()
+            self.bot5_status = self.bot5.status()
+        except Exception as exc:
+            self._log_event("error", f"Bot5 error: {exc}")
+            self.bot5_status = {"running": bool(self.bot5.cfg.get("running")), "error": str(exc)}
+
         now = time.time()
         if now - self._last_history_ts > self.history_interval:
             self._last_history_ts = now
@@ -930,8 +1647,12 @@ class Engine:
         return time.time()
 
     def _server_day_start(self, ts: Optional[float] = None) -> int:
-        sdt = datetime.fromtimestamp(ts if ts is not None else self._server_now())
-        return int(sdt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+        # broker epochs are already "server wall clock" numbers - flooring to
+        # UTC midnight of that number gives broker midnight. Interpreting the
+        # number in the *local* timezone (fromtimestamp) shifts "today" by the
+        # local-vs-broker offset.
+        epoch = int(ts if ts is not None else self._server_now())
+        return epoch - (epoch % DAY)
 
     def _effective_positions(self) -> List[Dict[str, Any]]:
         if self.locked:
@@ -1008,6 +1729,10 @@ class Engine:
             "bot": self.bot_status or self._bot_stub(),
             "bot2": self.bot2_status or self._bot2_stub(),
             "bot3": self.bot3_status or self._bot3_stub(),
+            "bot4": self.bot4_status or self._bot4_stub(),
+            "bot5": self.bot5_status or self._bot5_stub(),
+            "bot6": self.bot6_status or self._bot6_stub(),
+            "bot7": self.bot7_status or self._bot7_stub(),
             "stats": stats,
             "history": self.closed_cache[:HISTORY_LIMIT],
             "history_total": self.store.count_trades(account=key) if key else 0,
@@ -1025,9 +1750,72 @@ class Engine:
                    "last_seen": self.ea_last_seen, "events": self.ea_events},
             "env": {"mt5_package": package_available(), "mt5_version": package_version()},
             "windows": [w[0] for w in WINDOWS],
-            "market_watch": get_all_market_watches().get("watches", []),
+            "market_watch": (_mw_res := get_all_market_watches(extra=self._flow_market_list())).get("watches", []),
+            "market_statuses": _mw_res.get("market_statuses", {}),
             "now_ms": int(time.time() * 1000),
         }
+        self._attach_price_maps(self._snapshot_data)
+
+    # ------------------------------------------------------- price map helper
+    def _build_map(self, magic: int, symbol: str, price: float,
+                   positions: List[Dict[str, Any]], orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Every level a bot has 'set' on this market: pending orders + open positions."""
+        if not magic:
+            return []
+        rows: List[Dict[str, Any]] = []
+        for o in orders or []:
+            if int(o.get("magic") or 0) != magic:
+                continue
+            if symbol and o.get("symbol") != symbol:
+                continue
+            kind = str(o.get("kind") or "pending")
+            side = "buy" if kind.startswith("buy") else "sell" if kind.startswith("sell") else ""
+            po = float(o.get("price_open") or 0.0)
+            rows.append({
+                "kind": side, "type": "pending", "label": kind.upper(),
+                "price": po, "lot": float(o.get("volume") or 0.0),
+                "sl": float(o.get("sl") or 0.0), "tp": float(o.get("tp") or 0.0),
+                "state": "pending", "net": 0.0,
+                "dist": round(po - price, 6) if price else 0.0,
+                "comment": str(o.get("comment") or ""),
+            })
+        for p in positions or []:
+            if int(p.get("magic") or 0) != magic:
+                continue
+            if symbol and p.get("symbol") != symbol:
+                continue
+            side = str(p.get("side") or "")
+            po = float(p.get("price_open") or 0.0)
+            rows.append({
+                "kind": side, "type": "position", "label": f"{side.upper()} OPEN".strip(),
+                "price": po, "lot": float(p.get("volume") or 0.0),
+                "sl": float(p.get("sl") or 0.0), "tp": float(p.get("tp") or 0.0),
+                "state": "open", "net": float(p.get("net") or 0.0),
+                "dist": round(po - price, 6) if price else 0.0,
+                "comment": str(p.get("comment") or ""),
+            })
+        rows.sort(key=lambda r: r["price"], reverse=True)
+        return rows
+
+    def _attach_price_maps(self, snap: Dict[str, Any]) -> None:
+        positions = snap.get("positions") or []
+        orders = snap.get("orders") or []
+        for key in ("bot", "bot2", "bot3", "bot4", "bot5", "bot6", "bot7"):
+            status = snap.get(key)
+            if not isinstance(status, dict):
+                continue
+            conf = status.get("config") or {}
+            magic = int(_num(conf.get("magic"), 0))
+            symbol = str(status.get("symbol") or "")
+            price = _num(status.get("price"), 0.0) or _num(status.get("ask"), 0.0)
+            if not price:
+                for p in positions:
+                    if p.get("symbol") == symbol:
+                        price = _num(p.get("price_current"), 0.0)
+                        if price:
+                            break
+            status["map"] = self._build_map(magic, symbol, price, positions, orders)
+            status["map_price"] = round(price, 6)
 
     def _publish_watch(self, watches: List[Dict[str, Any]]) -> None:
         """Pushes only the market pressure watch dials whenever they move.
@@ -1150,6 +1938,9 @@ class Engine:
         pos = data.get("positions") or []
         bot = data.get("bot") or {}
         bot2 = data.get("bot2") or {}
+        bot5 = data.get("bot5") or {}
+        bot6 = data.get("bot6") or {}
+        bot7 = data.get("bot7") or {}
         sig = (
             data.get("status"), data.get("source"), data.get("mode"), data.get("account_kind"),
             len(pos), round(sum(float(p.get("net") or 0.0) for p in pos), 2),
@@ -1165,6 +1956,42 @@ class Engine:
             bot2.get("symbol"), bot2.get("symbol_requested"), bot2.get("running"),
             bot2.get("trend_mode"), bot2.get("market_trend"),
             len(bot2.get("positions") or []), bot2.get("floating"), bot2.get("ask"),
+            # bot 5: news list changes (events expiring / new ones arriving) and
+            # its market price must reach the browser immediately
+            bot5.get("symbol"), bot5.get("running"), bot5.get("ask"),
+            bot5.get("news_total"), len(bot5.get("news") or []),
+            bot5.get("plan"),
+            tuple((o.get("market"), o.get("verdict")) for o in (bot5.get("outlook") or [])),
+            # sessions board: selected market, live state of every session and the
+            # 10-minute AI refresh must reach the browser without waiting for a tick
+            (bot5.get("sessions") or {}).get("symbol"),
+            (bot5.get("sessions") or {}).get("updated"),
+            (bot5.get("sessions") or {}).get("source"),
+            tuple((s.get("key"), s.get("state"), s.get("open_ts"))
+                  for s in ((bot5.get("sessions") or {}).get("sessions") or [])),
+            # AI market analysis: the selected market / timeframe, its per-timeframe
+            # verdicts and every target price must reach the browser live
+            (bot5.get("ai") or {}).get("symbol"),
+            (bot5.get("ai") or {}).get("timeframe"),
+            (bot5.get("ai") or {}).get("updated"),
+            (bot5.get("ai") or {}).get("price"),
+            (bot5.get("ai") or {}).get("source"),
+            tuple((r.get("key"), r.get("verdict"), r.get("score"), r.get("rsi"), r.get("atr"))
+                  for r in ((bot5.get("ai") or {}).get("rows") or [])),
+            ((bot5.get("ai") or {}).get("combined") or {}).get("verdict"),
+            ((bot5.get("ai") or {}).get("combined") or {}).get("confidence"),
+            ((bot5.get("ai") or {}).get("target") or {}).get("up_price"),
+            ((bot5.get("ai") or {}).get("target") or {}).get("down_price"),
+            # bot 6 / bot 7: their live price, state and parked levels must reach
+            # the browser on the same frame as everything else
+            bot6.get("symbol"), bot6.get("symbol_requested"), bot6.get("running"),
+            bot6.get("ask"), bot6.get("pending_count"), len(bot6.get("positions") or []),
+            bot6.get("floating"), bot6.get("watch", {}).get("allowed"),
+            (bot6.get("ai") or {}).get("verdict"), (bot6.get("ai") or {}).get("allowed"),
+            bot7.get("symbol"), bot7.get("symbol_requested"), bot7.get("running"),
+            bot7.get("ask"), len(bot7.get("positions") or []), bot7.get("floating"),
+            bot7.get("trigger", {}).get("candle_time"),
+            (bot7.get("ai") or {}).get("verdict"), (bot7.get("ai") or {}).get("allowed"),
         )
         if not force and sig == self._last_signature and (time.time() - self._last_publish_ts) < 1.0:
             return
@@ -1175,19 +2002,84 @@ class Engine:
         except Exception:
             pass
 
+    def _flow_market_list(self) -> List[str]:
+        """The markets the flow pipeline is currently analysing.
+
+        The dashboard's pipeline follows one market: the AI board market is the
+        user's selection, and the sessions board can be set separately. Both are
+        added to the watch set so the single dial that is shown always receives
+        live order-flow numbers instead of an empty card.
+        """
+        try:
+            out: List[str] = []
+            for key in ("ai_market", "session_market"):
+                sym = str(self.bot5.cfg.get(key) or "").strip()
+                if sym and sym not in out:
+                    out.append(sym)
+            return out
+        except Exception:
+            return []
+
     def _watch_pressure_for(self, symbol: str) -> Dict[str, Any]:
         """Live watch-dial pressure lookup for the trading bots.
 
         Returns the freshest dial row for symbol; empty dict when the dial has no
-        data (the bot then treats it as NEUTRAL and stays flat).
+        data (the bot then treats it as NEUTRAL and stays flat). Synthetic
+        fallback rows (live=False, fabricated while the terminal glitches) are
+        withheld - a bot must never act on invented pressure numbers.
         """
         sym = str(symbol or "").strip().upper()
         if not sym:
             return {}
         data = getattr(self, "_snapshot_data", None) or {}
-        for w in (data.get("market_watch") or []):
+        watches = data.get("market_watch") or []
+        # 1. Exact symbol match
+        for w in watches:
             if str(w.get("symbol") or "").strip().upper() == sym:
+                if w.get("live") is False:
+                    return {}
                 return w
+        # 2. Display name match
+        for w in watches:
+            wdname = str(w.get("displayName") or "").strip().upper().replace(" ", "")
+            if wdname == sym.replace(" ", ""):
+                if w.get("live") is False:
+                    return {}
+                return w
+        # 3. Normalized match (strip suffix like 'M', '.', '247')
+        sym_norm = sym.rstrip("M.").replace("247", "")
+        for w in watches:
+            wsym = str(w.get("symbol") or "").strip().upper().rstrip("M.").replace("247", "")
+            if wsym == sym_norm:
+                if w.get("live") is False:
+                    return {}
+                return w
+        return {}
+
+    def _ai_outlook_for(self, symbol: str) -> Dict[str, Any]:
+        """The news engine's AI market-direction verdict for this symbol.
+
+        The news trader (bot 5) reads every news source and publishes one verdict
+        per market. Bots 6 and 7 ask for it before entering so a trade is never
+        taken straight against everything the news is saying. An unknown market
+        returns {} - unknown simply means "not blocked".
+        """
+        sym = str(symbol or "").strip().upper()
+        if not sym:
+            return {}
+        data = getattr(self, "_snapshot_data", None) or {}
+        rows = ((data.get("bot5") or {}).get("outlook")) or []
+
+        def norm(v: str) -> str:
+            return str(v or "").strip().upper().rstrip("M.").replace("247", "")
+
+        target = norm(sym)
+        for row in rows:
+            market = str(row.get("market") or "")
+            if not market:
+                continue
+            if market.upper() == sym or norm(market) == target:
+                return row
         return {}
 
     # --------------------------------------------------------------- events

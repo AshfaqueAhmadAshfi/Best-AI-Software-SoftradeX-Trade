@@ -28,19 +28,21 @@ Get-ChildItem $roaming -Directory | ForEach-Object {
     $editor = if ($termDir) { Join-Path $termDir 'MetaEditor64.exe' } else { '' }
     if ($editor -and (Test-Path $editor)) {
         $log = Join-Path $env:TEMP 'exdash_compile.log'
+        # remove a stale .ex5 first - otherwise a FAILED compile looks like a
+        # successful one just because the old file is still sitting there
+        Remove-Item (Join-Path $dest 'DashboardBridge.ex5') -Force -ErrorAction SilentlyContinue
         & $editor "/compile:$dest\DashboardBridge.mq5" "/log:$log" | Out-Null
-        Start-Sleep -Milliseconds 800
+        Start-Sleep -Milliseconds 1200
         if (Test-Path (Join-Path $dest 'DashboardBridge.ex5')) {
             Write-Host "  compiled OK -> DashboardBridge.ex5"
             $installed++
         } else {
-            Write-Host "  compile failed - open the file in MetaEditor and press F7"
+            Write-Host "  compile failed - see log: $log"
         }
     } else {
         Write-Host "  MetaEditor not found - open DashboardBridge.mq5 in MetaEditor and press F7"
-        $installed++
     }
 }
 
-if ($installed -eq 0) { Write-Host "No MQL5 terminal folder was found." }
+if ($installed -eq 0) { Write-Host "No terminal was compiled. Check the messages above." }
 else { Write-Host "`nDone. In MT5: Tools > Options > Expert Advisors > allow WebRequest for http://127.0.0.1:8777" }

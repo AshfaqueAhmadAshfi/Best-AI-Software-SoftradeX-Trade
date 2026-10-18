@@ -7,7 +7,12 @@
   <meta name="color-scheme" content="dark" />
   <title>Exness Trading Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="stylesheet" href="/static/styles.css?v=20261002_0035" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css?v=20261018_mktflow" />
+    <link rel="stylesheet" href="/static/styles-premium.css?v=20261018_mktflow" />
+    <link rel="stylesheet" href="/static/styles-ultra.css?v=20261018_mktflow" />
+    <link rel="stylesheet" href="/static/styles-mech.css?v=20261018_mktflow" />
   <link rel="icon" type="image/jpeg" href="/static/logo.jpg" />
 </head>
 
@@ -44,6 +49,19 @@
         <button id="lang-btn" class="icon-btn lang-btn" title="Language">বাং</button>
       </div>
     </header>
+
+    <!-- ================= LIVE ROTATING MARKET TICKER TAPE (Market Name + Price Gurbe) ================= -->
+    <div id="market-ticker-bar" class="market-ticker-bar" aria-label="Live Market Price Ticker">
+      <div class="ticker-badge" title="Live Market Feeds">
+        <span class="ticker-pulse-led"></span>
+        <span class="ticker-badge-text" data-i18n="marketLiveTicker">MARKET LIVE</span>
+      </div>
+      <div class="ticker-track-container" id="ticker-track-container">
+        <div class="ticker-track" id="market-ticker-track">
+          <!-- Populated dynamically with duplicate sets for seamless infinite rotation -->
+        </div>
+      </div>
+    </div>
 
     <!-- ================= LOGIN ================= -->
     <section id="connect-view" class="connect-wrap">
@@ -104,6 +122,20 @@
           </div>
           <div id="connect-progress" class="progress hidden"><span></span></div>
         </form>
+        <div class="login-market-strip" id="login-market-strip" title="Real-Time Market Prices">
+          <div class="login-market-header">
+            <div class="login-market-header-left">
+              <span class="login-live-dot"></span>
+              <span class="login-market-title" data-i18n="liveRatesTitle">LIVE MARKET RATES</span>
+            </div>
+            <span class="login-stream-badge" data-i18n="realtimeStreaming">24/7 STREAM</span>
+          </div>
+          <div class="login-ticker-viewport">
+            <div class="login-ticker-track" id="login-ticker-track">
+              <!-- Populated and rotating dynamically -->
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -146,578 +178,1587 @@
         </div>
       </section>
 
-      <!-- stats -->
-      <section class="stats-head">
-        <div class="seg" id="period-seg">
-          <button class="seg-btn active" data-period="today" data-i18n="today">Today</button>
-          <button class="seg-btn" data-period="7d">7D</button>
-          <button class="seg-btn" data-period="30d">30D</button>
-          <button class="seg-btn" data-period="90d">90D</button>
-          <button class="seg-btn" data-period="session" data-i18n="session">Session</button>
-        </div>
-        <div class="head-right">
-          <span class="muted" id="last-update">—</span>
-          <button id="refresh-btn" class="icon-btn" title="Refresh">⟳</button>
-        </div>
-      </section>
+      <!-- side rails: positions & history (left) / all bots (right) -->
+      <div class="flow-rails-left-wrap">
+        <button type="button" class="flow-rail flow-rail-left flow-rail-pos" id="rail-positions" aria-controls="positions-drawer" aria-expanded="false" title="Open Positions">
+          <span class="rail-chev">‹</span>
+          <span class="rail-txt" data-i18n="railPositions">POSITIONS</span>
+          <span class="rail-badge" id="rail-pos-count">0</span>
+        </button>
+        <button type="button" class="flow-rail flow-rail-left flow-rail-hist" id="rail-history" aria-controls="positions-drawer" aria-expanded="false" title="Trade History">
+          <span class="rail-chev">‹</span>
+          <span class="rail-txt" data-i18n="flowStepHistory">HISTORY</span>
+          <span class="rail-badge" id="rail-hist-count">0</span>
+        </button>
+      </div>
+      <div class="flow-rails-right-wrap">
+        <button type="button" class="flow-rail flow-rail-right flow-rail-bots" id="rail-bots" aria-controls="bots-drawer" aria-expanded="false" title="All 5 Bots & News">
+          <span class="rail-chev">›</span>
+          <span class="rail-txt" data-i18n="railBots">ALL BOTS</span>
+          <span class="rail-badge" id="rail-bot-count">0</span>
+        </button>
+        <button type="button" class="flow-rail flow-rail-right flow-rail-act" id="rail-activity" aria-controls="bots-drawer" aria-expanded="false" title="Activity Feed">
+          <span class="rail-chev">›</span>
+          <span class="rail-txt" data-i18n="activity">ACTIVITY</span>
+          <span class="rail-badge" id="rail-feed-count">0</span>
+        </button>
+      </div>
+      <div class="drawer-scrim" id="drawer-scrim" hidden></div>
 
-      <section class="stat-grid">
-        <div class="stat-card wide" id="card-net">
-          <span class="stat-label" id="stat-net-label" data-i18n="totalProfitToday">Total profit today</span>
-          <span class="stat-value big" id="stat-net">0.00</span>
-          <span class="stat-sub" id="stat-net-sub">—</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label" data-i18n="wins">Profitable trades</span>
-          <span class="stat-value pos-color" id="stat-wins">0</span>
-          <span class="stat-sub" id="stat-wins-sub">—</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label" data-i18n="losses">Losing trades</span>
-          <span class="stat-value neg-color" id="stat-losses">0</span>
-          <span class="stat-sub" id="stat-losses-sub">—</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label" data-i18n="winRate">Win rate</span>
-          <span class="stat-value" id="stat-winrate">0%</span>
-          <span class="stat-sub" id="stat-winrate-sub">—</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label" data-i18n="floating">Floating P/L</span>
-          <span class="stat-value" id="stat-floating">0.00</span>
-          <span class="stat-sub" id="stat-floating-sub">—</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label" data-i18n="profitFactor">Profit factor</span>
-          <span class="stat-value" id="stat-pf">—</span>
-          <span class="stat-sub" id="stat-pf-sub">—</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label" data-i18n="bestWorst">Best / Worst</span>
-          <span class="stat-value small" id="stat-bw">—</span>
-          <span class="stat-sub" id="stat-bw-sub">—</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label" data-i18n="volume">Lots traded</span>
-          <span class="stat-value" id="stat-volume">0.00</span>
-          <span class="stat-sub" id="stat-volume-sub">—</span>
-        </div>
-      </section>
+      <!-- ================= 00 · SOFTRADEX LIVE PRO SPOT TERMINAL ================= -->
+      <section class="softradex-terminal-section binance-terminal-section" id="binance-terminal-section">
+        <!-- Top Toolbar -->
+        <div class="softradex-term-topbar binance-term-topbar">
+          <div class="term-brand-block">
+            <img src="/static/logo.jpg" alt="SoftradeX" class="softradex-term-logo binance-logo-svg" width="22" height="22" />
+            <span class="term-brand-name">SOFTRADEX</span>
+            <span class="term-pro-tag">PRO SPOT</span>
+            <span class="term-live-pulse online" id="b-term-pulse" title="Connected to SoftradeX Live Stream"></span>
+          </div>
 
-      <!-- ================= MARKET PRESSURE WATCH DIALS (BUYER vs SELLER) ================= -->
-      <section class="panel watch-panel" id="market-watch-panel">
-        <div class="panel-head">
-          <div class="watch-head-left">
-            <span class="watch-panel-icon-wrap">
-              <svg class="watch-panel-icon-svg" viewBox="0 0 24 24">
-                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-                <circle cx="12" cy="12" r="7"/>
-                <path d="M12 12l2-4"/>
-              </svg>
-            </span>
-            <div>
-              <h3 class="watch-main-title">
-                <span data-i18n="watchTitle">Market Pressure Watch Dials</span>
-                <span class="pill watch-pill" id="watch-summary-pill">ORDER FLOW CALIBRATED</span>
-              </h3>
-              <p class="watch-subtitle" data-i18n="watchSubtitle">রিয়েল-টাইম ক্যান্ডেল ভলিউম ও বায়ার/সেলার চাপের লাইভ মেশিন ওয়াচ ডায়াল</p>
+          <!-- Symbol Tabs: Gold, BTC, ETH -->
+          <div class="binance-symbol-tabs" id="binance-symbol-tabs">
+            <button type="button" class="b-tab-btn active" data-symbol="PAXGUSDT">
+              <span class="b-icon">🟡</span> <span class="b-sym">GOLD</span><span class="b-pair">/USDT</span>
+            </button>
+            <button type="button" class="b-tab-btn" data-symbol="BTCUSDT">
+              <span class="b-icon">🟠</span> <span class="b-sym">BTC</span><span class="b-pair">/USDT</span>
+            </button>
+            <button type="button" class="b-tab-btn" data-symbol="ETHUSDT">
+              <span class="b-icon">🔷</span> <span class="b-sym">ETH</span><span class="b-pair">/USDT</span>
+            </button>
+          </div>
+
+          <!-- Live 24h Ticker Statistics Bar -->
+          <div class="binance-ticker-strip" id="binance-ticker-strip">
+            <div class="b-stat b-stat-price">
+              <span class="b-val" id="b-live-price">--</span>
+              <span class="b-change" id="b-live-change">--%</span>
+            </div>
+            <div class="b-stat">
+              <span class="b-lbl">24h High</span>
+              <span class="b-val" id="b-24h-high">--</span>
+            </div>
+            <div class="b-stat">
+              <span class="b-lbl">24h Low</span>
+              <span class="b-val" id="b-24h-low">--</span>
+            </div>
+            <div class="b-stat">
+              <span class="b-lbl">24h Vol (USDT)</span>
+              <span class="b-val" id="b-24h-vol">--</span>
             </div>
           </div>
-          <div class="watch-head-right">
-            <span class="watch-timer-badge" id="watch-timer-badge" title="Live WebSocket stream - no refresh timer">
-              <span class="timer-pulse-dot"></span>
-              <span id="watch-timer-text">LIVE · --:--:--</span>
-            </span>
-            <button type="button" class="watch-refresh-btn" id="watch-refresh-btn" title="Force one immediate recompute (manual only)">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-              </svg>
+
+          <!-- Timeframe Selector -->
+          <div class="binance-tf-tabs" id="binance-tf-tabs">
+            <button type="button" class="b-tf-btn" data-interval="1m">1m</button>
+            <button type="button" class="b-tf-btn active" data-interval="5m">5m</button>
+            <button type="button" class="b-tf-btn" data-interval="15m">15m</button>
+            <button type="button" class="b-tf-btn" data-interval="1h">1h</button>
+            <button type="button" class="b-tf-btn" data-interval="4h">4h</button>
+            <button type="button" class="b-tf-btn" data-interval="1d">1D</button>
+          </div>
+
+          <!-- Actions -->
+          <div class="binance-term-actions">
+            <button type="button" class="term-toggle-btn" id="binance-term-toggle" title="Toggle Terminal Visibility">
+              <span id="b-toggle-icon">−</span> <span id="b-toggle-text">Collapse</span>
             </button>
           </div>
         </div>
 
-        <div class="watch-grid" id="market-watch-grid">
-          <!-- Initial Telemetry Loading Placeholder -->
-          <div style="color:var(--txt-dim);padding:24px;font-size:13px;grid-column:1/-1;text-align:center;font-family:var(--mono);">
-            <span class="machine-led-pulse" style="display:inline-block;margin-right:8px;"></span>
-            CALIBRATING MACHINE TELEMETRY CHRONOMETERS & SYMBOLS...
+        <!-- Terminal Main Workspace Grid -->
+        <div class="binance-term-workspace" id="binance-term-workspace">
+          <!-- Left: High Performance Candlestick & Volume Canvas -->
+          <div class="binance-chart-wrapper">
+            <div class="binance-chart-legend" id="binance-chart-legend">
+              <span class="b-legend-sym" id="b-legend-sym">GOLD/USDT · 5M</span>
+              <span class="b-legend-item">O: <strong id="b-ohlc-o">--</strong></span>
+              <span class="b-legend-item">H: <strong id="b-ohlc-h">--</strong></span>
+              <span class="b-legend-item">L: <strong id="b-ohlc-l">--</strong></span>
+              <span class="b-legend-item">C: <strong id="b-ohlc-c">--</strong></span>
+              <span class="b-legend-item">Vol: <strong id="b-ohlc-v">--</strong></span>
+              <span class="b-legend-ind sma7">SMA(7): <strong id="b-sma-7">--</strong></span>
+              <span class="b-legend-ind sma25">SMA(25): <strong id="b-sma-25">--</strong></span>
+              <span class="b-legend-ind whale-ind" id="b-whale-status" title="Real-time Whale Order Tracking on Candles"><span class="whale-dot"></span> 🐋 Whales: <strong id="b-whale-stat-txt">LIVE</strong></span>
+            </div>
+            <div class="binance-canvas-box" id="binance-canvas-box">
+              <canvas id="binance-candlestick-canvas"></canvas>
+            </div>
+          </div>
+
+          <!-- Right: Authentic SoftradeX Order Book & Live Trades Sidebar -->
+          <div class="binance-book-sidebar">
+            <div class="b-side-header">
+              <button type="button" class="b-side-tab active" id="b-tab-depth">Order Book</button>
+              <button type="button" class="b-side-tab" id="b-tab-trades">Recent Trades</button>
+            </div>
+            
+            <!-- Order Book View -->
+            <div class="b-depth-container" id="b-depth-container">
+              <div class="b-depth-cols">
+                <span>Price</span>
+                <span>Size</span>
+                <span>Total</span>
+              </div>
+              <div class="b-depth-asks" id="b-depth-asks"></div>
+              <div class="b-depth-mid" id="b-depth-mid">
+                <span class="b-mid-price" id="b-depth-mid-price">--</span>
+                <span class="b-mid-spread" id="b-depth-spread">Spread: --</span>
+              </div>
+              <div class="b-depth-bids" id="b-depth-bids"></div>
+            </div>
+
+            <!-- Recent Trades View -->
+            <div class="b-trades-container" id="b-trades-container" style="display: none;">
+              <div class="b-trades-cols">
+                <span>Price</span>
+                <span>Amount</span>
+                <span>Time</span>
+              </div>
+              <div class="b-trades-list" id="b-trades-list"></div>
+            </div>
           </div>
         </div>
       </section>
 
+      <!-- ================= SIGNAL PIPELINE ================= -->
+      <section class="flow" id="flow-pipeline">
 
-      <!-- auto trading (gold straddle bot) -->
-      <section class="panel bot-panel">
-        <div class="panel-head">
-          <h3>🤖 <span data-i18n="botTitle">Auto Trading</span>
-            <span class="pill" id="bot-symbol">XAUUSD</span>
-          </h3>
-          <span class="bot-chip stopped" id="bot-chip">STOPPED</span>
-        </div>
-        <div class="bot-body">
-          <div class="bot-left">
-            <div class="bot-settings">
-              <div class="bot-field">
-                <label for="bot-lot" data-i18n="botLot">Lot size</label>
-                <input id="bot-lot" type="number" step="0.01" min="0.01" value="0.01" />
-              </div>
-              <div class="bot-field">
-                <label for="bot-gap" data-i18n="botGap">Gap ($)</label>
-                <input id="bot-gap" type="number" step="0.1" min="0.1" value="2.0" />
-              </div>
-              <div class="bot-field">
-                <label for="bot-sl" data-i18n="botSL">SL ($)</label>
-                <input id="bot-sl" type="number" step="0.1" min="0" value="4.0" />
-              </div>
-            </div>
-            <div class="bot-market">
-              <div class="bot-market-head">
-                <span class="bot-market-label" data-i18n="botSymbol">Market</span>
-                <span id="bot-symbol-name" class="bot-market-active">XAUUSDm</span>
-              </div>
-              <div id="bot-market-chips" class="chips">
-                <button type="button" class="chip" data-sym="BTCUSDTm">BTCUSDTm</button>
-                <button type="button" class="chip" data-sym="BTCUSDm">BTCUSDm</button>
-                <button type="button" class="chip" data-sym="XAUUSD247m">XAUUSD247m</button>
-                <button type="button" class="chip active" data-sym="XAUUSDm">XAUUSDm</button>
-                <button type="button" class="chip" data-sym="DXY">DXY</button>
-                <button type="button" class="chip" data-sym="USOILm">Crude Oil</button>
-                <button type="button" class="chip" data-sym="XAUGBPm">XAUGBP</button>
-                <button type="button" class="chip" data-sym="USDJPYm">USDJPY</button>
-                <button type="button" class="chip" data-sym="EURUSDm">EURUSD</button>
-                <button type="button" class="chip" data-sym="USTECm">USTEC</button>
-              </div>
-            </div>
-            <div class="bot-actions">
-              <button id="bot-start" class="btn bot-start" data-i18n="botStart">START</button>
-              <button id="bot-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
-              <button id="bot-close" class="btn ghost small" data-i18n="botClose">Close now</button>
-            </div>
-          </div>
-          <div class="bot-info">
-            <div class="bot-cond-title" data-i18n="condTitle" style="display: none;">Conditions</div>
-            <ul class="bot-cond" id="bot-cond" style="display: none;"></ul>
-            <div class="bot-line" id="bot-orders">—</div>
-            <div class="bot-line" id="bot-pos">—</div>
-            <div class="bot-line" id="bot-last">—</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ================= AUTO TRADING BOT 2 (CANDLE MOMENTUM & STRUCTURE) ================= -->
-      <section class="panel bot-panel" id="bot2-panel">
-        <div class="panel-head">
-          <h3>🤖 <span data-i18n="bot2Title">Auto Trading (Candle &amp; Structure)</span>
-            <span class="pill" id="bot2-symbol">BTCUSDTm</span>
-            <span class="pill trend-pill" id="bot2-trend-pill">Trend: UP</span>
-          </h3>
-          <span class="bot-chip stopped" id="bot2-chip">STOPPED</span>
-        </div>
-        <div class="bot-body">
-          <div class="bot-left">
-            <div class="bot-settings bot-settings-4">
-              <div class="bot-field">
-                <label for="bot2-lot" data-i18n="botLot">Lot size</label>
-                <input id="bot2-lot" type="number" step="0.01" min="0.01" value="0.01" />
-              </div>
-              <div class="bot-field">
-                <label for="bot2-max-trades" data-i18n="bot2MaxTrades">Max Trades</label>
-                <input id="bot2-max-trades" type="number" step="1" min="1" max="50" value="1" />
-              </div>
-              <div class="bot-field">
-                <label for="bot2-tp" data-i18n="bot2TP">TP ($)</label>
-                <input id="bot2-tp" type="number" step="0.05" min="0.01" value="0.10" />
-              </div>
-              <div class="bot-field">
-                <label for="bot2-sl" data-i18n="bot2SL">SL ($)</label>
-                <input id="bot2-sl" type="number" step="0.1" min="0.05" value="2.00" />
-              </div>
-              <div class="bot-field">
-                <label for="bot2-block-start" data-i18n="bot2BlockStart">First block (s)</label>
-                <input id="bot2-block-start" type="number" step="1" min="0" max="59" value="10" />
-              </div>
-              <div class="bot-field">
-                <label for="bot2-block-end" data-i18n="bot2BlockEnd">Last block (s)</label>
-                <input id="bot2-block-end" type="number" step="1" min="0" max="59" value="10" />
-              </div>
-              <div class="bot-field">
-                <label for="bot2-block-mid-from" data-i18n="bot2BlockMidFrom">Mid from (s)</label>
-                <input id="bot2-block-mid-from" type="number" step="1" min="0" max="59" value="25" />
-              </div>
-              <div class="bot-field">
-                <label for="bot2-block-mid-to" data-i18n="bot2BlockMidTo">Mid to (s)</label>
-                <input id="bot2-block-mid-to" type="number" step="1" min="0" max="59" value="35" />
-              </div>
-            </div>
-
-            <div class="bot-hint" data-i18n="bot2BlockHint">1-minute candle time-window: no trade in the first N seconds, the last N seconds, or the middle window — values you enter are used exactly.</div>
-
-            <div class="bot-market">
-              <div class="bot-market-head">
-                <span class="bot-market-label" data-i18n="botSymbol">Market</span>
-                <span id="bot2-symbol-name" class="bot-market-active">BTCUSDTm</span>
-              </div>
-              <div id="bot2-market-chips" class="chips">
-                <button type="button" class="chip active" data-sym="BTCUSDTm">BTCUSDTm</button>
-                <button type="button" class="chip" data-sym="BTCUSDm">BTCUSDm</button>
-                <button type="button" class="chip" data-sym="XAUUSD247m">XAUUSD247m</button>
-                <button type="button" class="chip" data-sym="XAUUSDm">XAUUSDm</button>
-                <button type="button" class="chip" data-sym="DXY">DXY</button>
-                <button type="button" class="chip" data-sym="USOILm">Crude Oil</button>
-                <button type="button" class="chip" data-sym="XAUGBPm">XAUGBPm</button>
-                <button type="button" class="chip" data-sym="USDJPYm">USDJPYm</button>
-                <button type="button" class="chip" data-sym="EURUSDm">EURUSDm</button>
-                <button type="button" class="chip" data-sym="USTECm">USTECm</button>
-              </div>
-            </div>
-
-            <!-- Market Structure Levels (Day & Weekend) -->
-            <div class="bot-structure-wrap">
-              <div class="bot-market-head">
-                <span class="bot-market-label" data-i18n="bot2StructLevels">Structure Levels (Day &amp; Weekend)</span>
-                <div class="struct-tf-toggle" id="bot2-tf-toggle">
-                  <button type="button" class="chip active" data-tf="D1">Day (D1)</button>
-                  <button type="button" class="chip" data-tf="W1">Weekend (W1)</button>
-                </div>
-              </div>
-              <div class="struct-badges-grid" id="bot2-struct-grid">
-                <div class="struct-card sell">
-                  <div class="struct-card-top">
-                    <span class="s-name">HH</span>
-                    <span class="s-action">SELL</span>
-                  </div>
-                  <span class="s-price" id="bot2-hh">—</span>
-                  <span class="s-sub">Higher High</span>
-                </div>
-                <div class="struct-card sell">
-                  <div class="struct-card-top">
-                    <span class="s-name">LH</span>
-                    <span class="s-action">SELL</span>
-                  </div>
-                  <span class="s-price" id="bot2-lh">—</span>
-                  <span class="s-sub">Lower High</span>
-                </div>
-                <div class="struct-card buy">
-                  <div class="struct-card-top">
-                    <span class="s-name">HL</span>
-                    <span class="s-action">BUY</span>
-                  </div>
-                  <span class="s-price" id="bot2-hl">—</span>
-                  <span class="s-sub">Higher Low</span>
-                </div>
-                <div class="struct-card buy">
-                  <div class="struct-card-top">
-                    <span class="s-name">LL</span>
-                    <span class="s-action">BUY</span>
-                  </div>
-                  <span class="s-price" id="bot2-ll">—</span>
-                  <span class="s-sub">Lower Low</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="bot-actions">
-              <button id="bot2-start" class="btn bot-start" data-i18n="botStart">START</button>
-              <button id="bot2-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
-              <button id="bot2-trend" class="btn bot-trend"><span data-i18n="bot2Trend">Trend</span>: <span id="bot2-trend-status" class="trend-badge deactive">OFF</span></button>
-              <button id="bot2-check-trend-btn" class="btn ghost small" title="Check Trend Now (60s cycle)"><span data-i18n="bot2CheckTrend">🔄 Check Trend</span></button>
-              <button id="bot2-close" class="btn ghost small" data-i18n="botClose">Close now</button>
-            </div>
+        <!-- 01 · MARKET -->
+        <div class="flow-stage" id="stage-market">
+          <div class="flow-step-row">
+            <span class="flow-step-num">01</span>
+            <span class="flow-step-name" data-i18n="flowStepMarket">MARKET</span>
+            <span class="flow-step-hint" data-i18n="flowStepMarketHint">pick one market — every stage below follows it</span>
+            <span class="flow-step-live"><i></i><span data-i18n="flowLive">LIVE</span></span>
           </div>
 
-          <div class="bot-info">
-            <!-- 60-Second Trend Check System Card -->
-            <div class="bot2-trend-box" id="bot2-trend-box">
-              <div class="trend-box-head">
-                <div class="trend-box-title">
-                  <span class="trend-radar-wrap">
-                    <span class="trend-radar-dot" id="bot2-radar-dot"></span>
-                    <span class="trend-radar-wave"></span>
-                  </span>
-                  <b data-i18n="bot2TrendSystemTitle">2.5s Trend System:</b>
-                  <span id="bot2-trend-value" class="trend-tag up">UP (BULLISH ▲)</span>
+          <article class="panel market-hero" id="market-hero">
+            <div class="mh-main">
+              <div class="mh-head-bar">
+                <span class="mh-eyebrow" data-i18n="flowHeroEyebrow">START HERE · SELECT YOUR MARKET</span>
+                <span class="mh-status" id="flow-market-status">—</span>
+              </div>
+              <div class="mh-chips" id="flow-market-chips"></div>
+            </div>
+
+            <div class="mh-stats-row">
+              <div class="mh-price-block">
+                <span class="mh-symbol" id="flow-symbol-label">—</span>
+                <span class="mh-price" id="flow-price">—</span>
+                <span class="mh-change" id="flow-change">—</span>
+              </div>
+
+              <div class="mh-side-block">
+                <span class="mh-signal" id="flow-signal">◆ WAIT</span>
+                <span class="mh-signal-sub" id="flow-signal-sub" data-i18n="flowSignalSub">the AI is still reading the flow</span>
+                <div class="mh-bar"><span class="mh-bar-buy" id="flow-bar-buy"></span></div>
+                <div class="mh-bar-labels">
+                  <span>BUY <b id="flow-buy-pct">—</b></span>
+                  <span>SELL <b id="flow-sell-pct">—</b></span>
                 </div>
-                <div class="trend-box-timer">
-                  <span id="bot2-trend-countdown" class="trend-countdown-pill">⏱️ 2.5s</span>
-                  <button type="button" id="bot2-trend-refresh" class="btn-icon-xs" title="Refresh trend check now">🔄</button>
-                </div>
-              </div>
-              <!-- Smooth 2.5-Second Countdown Progress Bar -->
-              <div class="trend-bar-track">
-                <div class="trend-bar-fill" id="bot2-trend-bar"></div>
-              </div>
-              <div class="trend-box-details" id="bot2-trend-details">
-                Awaiting 2.5-second market trend analysis...
-              </div>
-              <div class="trend-box-footer" id="bot2-trend-footer" data-i18n="bot2TrendDetailsFooter">
-                ⏱️ প্রতি ২.৫ সেকেন্ড পর পর স্বয়ংক্রিয়ভাবে ট্রেন্ড (UP/DOWN) চেক হচ্ছে ও সেই ট্রেন্ডে ট্রেড নেওয়া হচ্ছে
               </div>
             </div>
 
-            <div class="bot-cond-title" data-i18n="condTitle" style="display: none;">Conditions (what the bot does)</div>
-            <ul class="bot-cond" id="bot2-cond" style="display: none;">
-              <li><b>১. লট ও রানিং ট্রেড সীমা:</b> লট <b>0.01</b> · একসাথে সর্বোচ্চ <b>1</b> টি ট্রেড রানিং থাকবে, এর
-                বেশি হবে না।</li>
-              <li><b>২. ক্যান্ডেল ফ্লো রিভার্সাল:</b> ক্যান্ডেল নিচে নামলে <b>BUY</b> ট্রেড (TP <b>$0.10</b>, SL
-                <b>$2.00</b>); ক্যান্ডেল উপরে উঠলে <b>SELL</b> ট্রেড (TP <b>$0.10</b>, SL <b>$2.00</b>) — ক্যান্ডেল ফ্লো
-                এর বিপরীত দিকে ট্রেড।</li>
-              <li><b>৩. মার্কেট স্ট্রাকচার লেভেল:</b>
-                <br>&nbsp;&nbsp;• <b>Lower Low (LL)</b> প্রাইসে আসলে <b>BUY</b> করবে (৪নং ক্যান্ডেল রুল তখন অফ থাকবে)
-                <br>&nbsp;&nbsp;• <b>Higher High (HH)</b> প্রাইসে আসলে <b>SELL</b> করবে (৪নং রুল অফ থাকবে)
-                <br>&nbsp;&nbsp;• <b>Lower High (LH)</b> প্রাইসে আসলে <b>SELL</b> করবে (৪নং রুল অফ থাকবে)
-                <br>&nbsp;&nbsp;• <b>Higher Low (HL)</b> প্রাইসে আসলে <b>BUY</b> করবে (৪নং রুল অফ থাকবে)
-              </li>
-              <li><b>৪. কন্টিনিউয়াস ট্রেডিং:</b> ক্যান্ডেল এর প্রাইস যত কমবে ও বাড়বে বিপরীত দিকে ট্রেড নিতে থাকবে,
-                যতক্ষণ না রানিং লিমিট পূর্ণ হয়।</li>
-            </ul>
-            <div class="bot-line" id="bot2-trend-line"><b>Trend Mode:</b> <span class="trend-deactive-text">DEACTIVE (OFF)</span></div>
-            <div class="bot-line" id="bot2-running-line"><b>রানিং ট্রেড:</b> 0 / 1 (স্লট খালি: 1 টি)</div>
-            <div class="bot-line" id="bot2-pos"><b>ট্রেড:</b> নেই</div>
-            <div class="bot-line" id="bot2-last">নির্বাচিত মার্কেট: <b>BTCUSDTm</b> · 0 খোলা / 0 ক্লোজড · প্রস্তুত</div>
-          </div>
+            <div class="mh-quote-block">
+              <span class="mh-quote"><em>BID</em><b id="flow-bid">—</b></span>
+              <span class="mh-quote"><em>ASK</em><b id="flow-ask">—</b></span>
+              <span class="mh-quote"><em>SPREAD</em><b id="flow-spread">—</b></span>
+            </div>
+
+            <!-- live trade flow balance: our account (+ every bot) vs the whole world (relocated to bottom of Market box) -->
+            <div class="flow-balance" id="flow-balance">
+              <div class="fb-cell fb-title"><span class="fb-live"></span><span data-i18n="flowBalanceTitle">LIVE TRADE FLOW</span></div>
+              <div class="fb-cell" id="fb-ours">—</div>
+              <div class="fb-cell" id="fb-world">—</div>
+            </div>
+          </article>
         </div>
-      </section>
 
-      <!-- ================= AUTO TRADING BOT 3 (EXTREME HIGH & LOW STRUCTURE) ================= -->
-      <section class="panel bot-panel" id="bot3-panel">
-        <div class="panel-head">
-          <h3>⚡ <span data-i18n="bot3Title">Auto Trading (Extreme High &amp; Low Structure)</span>
-            <span class="pill" id="bot3-symbol">XAUUSDm</span>
-          </h3>
-          <span class="bot-chip stopped" id="bot3-chip">STOPPED</span>
-        </div>
-        <div class="bot-body">
-          <div class="bot-left">
-            <div class="bot-settings bot-settings-4">
-              <div class="bot-field">
-                <label for="bot3-lot" data-i18n="botLot">Lot size</label>
-                <input id="bot3-lot" type="number" step="0.01" min="0.01" value="0.01" />
-              </div>
-              <div class="bot-field">
-                <label for="bot3-max-trades" data-i18n="bot2MaxTrades">Max Trades</label>
-                <input id="bot3-max-trades" type="number" step="1" min="1" max="50" value="1" />
-              </div>
-              <div class="bot-field">
-                <label for="bot3-tp" data-i18n="bot2TP">TP ($)</label>
-                <input id="bot3-tp" type="number" step="0.05" min="0.01" value="0.50" />
-              </div>
-              <div class="bot-field">
-                <label for="bot3-sl" data-i18n="bot2SL">SL ($)</label>
-                <input id="bot3-sl" type="number" step="0.1" min="0.05" value="5.00" />
-              </div>
-            </div>
-
-            <div class="bot-market">
-              <div class="bot-market-head">
-                <span class="bot-market-label" data-i18n="botSymbol">Market</span>
-                <span id="bot3-symbol-name" class="bot-market-active">XAUUSDm</span>
-              </div>
-              <div id="bot3-market-chips" class="chips">
-                <button type="button" class="chip active" data-sym="XAUUSDm">XAUUSDm</button>
-                <button type="button" class="chip" data-sym="XAUUSD247m">XAUUSD247m</button>
-                <button type="button" class="chip" data-sym="BTCUSDTm">BTCUSDTm</button>
-                <button type="button" class="chip" data-sym="BTCUSDm">BTCUSDm</button>
-                <button type="button" class="chip" data-sym="DXY">DXY</button>
-                <button type="button" class="chip" data-sym="USOILm">Crude Oil</button>
-                <button type="button" class="chip" data-sym="XAUGBPm">XAUGBPm</button>
-                <button type="button" class="chip" data-sym="USDJPYm">USDJPYm</button>
-                <button type="button" class="chip" data-sym="EURUSDm">EURUSDm</button>
-                <button type="button" class="chip" data-sym="USTECm">USTECm</button>
-              </div>
-            </div>
-
-            <!-- Extreme Structure Levels (Today, This Week & Prev Week) -->
-            <div class="bot-structure-wrap">
-              <div class="bot-market-head">
-                <span class="bot-market-label" data-i18n="bot3StructLevels">Extreme Structure Levels</span>
-                <div class="struct-tf-toggle" id="bot3-tf-toggle">
-                  <button type="button" class="chip active" data-tf="D1" data-i18n="bot3TfToday">Today (D1)</button>
-                  <button type="button" class="chip" data-tf="W1" data-i18n="bot3TfThisWeek">This Week (W1)</button>
-                  <button type="button" class="chip" data-tf="PREV" data-i18n="bot3TfPrevWeek">Prev Week</button>
-                </div>
-              </div>
-              <div class="struct-badges-grid" id="bot3-struct-grid">
-                <div class="struct-card sell">
-                  <div class="struct-card-top">
-                    <span class="s-name">HH</span>
-                    <span class="s-action">SELL</span>
-                  </div>
-                  <span class="s-price" id="bot3-hh">—</span>
-                  <span class="s-sub" id="bot3-hh-sub">Higher High</span>
-                </div>
-                <div class="struct-card sell">
-                  <div class="struct-card-top">
-                    <span class="s-name">LH</span>
-                    <span class="s-action">SELL</span>
-                  </div>
-                  <span class="s-price" id="bot3-lh">—</span>
-                  <span class="s-sub" id="bot3-lh-sub">Lower High</span>
-                </div>
-                <div class="struct-card buy">
-                  <div class="struct-card-top">
-                    <span class="s-name">HL</span>
-                    <span class="s-action">BUY</span>
-                  </div>
-                  <span class="s-price" id="bot3-hl">—</span>
-                  <span class="s-sub" id="bot3-hl-sub">Higher Low</span>
-                </div>
-                <div class="struct-card buy">
-                  <div class="struct-card-top">
-                    <span class="s-name">LL</span>
-                    <span class="s-action">BUY</span>
-                  </div>
-                  <span class="s-price" id="bot3-ll">—</span>
-                  <span class="s-sub" id="bot3-ll-sub">Lower Low</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="bot-actions">
-              <button id="bot3-start" class="btn bot-start" data-i18n="botStart">START</button>
-              <button id="bot3-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
-              <button id="bot3-close" class="btn ghost small" data-i18n="botClose">Close now</button>
-            </div>
+        <!-- 05 · NEXT EVENT -->
+        <div class="flow-stage" id="stage-news">
+          <div class="flow-step-row">
+            <span class="flow-step-num">05</span>
+            <span class="flow-step-name" data-i18n="flowStepNews">NEXT EVENT</span>
+            <span class="flow-step-hint" data-i18n="flowStepNewsHint">impact level + countdown to the release</span>
+            <span class="flow-step-live"><i></i><span data-i18n="flowLive">LIVE</span></span>
           </div>
 
-          <div class="bot-info">
-            <div class="radar-box-head">
-              <span class="bot-cond-title" data-i18n="bot3RadarTitle">🎯 Trade Execution Radar &amp; Timer</span>
-              <div class="radar-pills">
-                <span class="radar-zone-pill" id="bot3-zone-pill">MIDDLE (WAITING)</span>
-                <span class="radar-timer-pill" id="bot3-timer">⏱️ 60s</span>
-              </div>
-            </div>
+          <!-- 3 IMPACT FILTER BUTTONS: LOW, MEDIUM, HIGH -->
+          <div class="news-impact-filter-bar" id="news-impact-filter-bar">
+            <button type="button" class="news-impact-btn imp-filter-low" data-impact="low">
+              <span class="impact-dot"></span> Low
+            </button>
+            <button type="button" class="news-impact-btn imp-filter-medium" data-impact="medium">
+              <span class="impact-dot"></span> Medium
+            </button>
+            <button type="button" class="news-impact-btn imp-filter-high active" data-impact="high">
+              <span class="impact-dot"></span> High
+            </button>
+          </div>
 
-            <!-- 5 Planned Upcoming Trades list -->
-            <div class="planned-trades-card-wrap">
-              <div class="planned-trades-head">
-                <div class="planned-head-title-wrap">
-                  <div class="planned-trades-title" data-i18n="bot3PlannedTitle">Next 5 Extreme Execution Setups (Upcoming Trades)</div>
-                  <span class="planned-cycle-badge" id="bot3-recalc-badge" data-i18n="bot3PlannedCycle">⚡ 60s Auto Calculation</span>
-                </div>
-                <div class="planned-head-actions">
-                  <span class="planned-timer-pill" id="bot3-planned-timer" title="Auto-recalculates every 60 seconds">⏱️ 60s</span>
-                  <button type="button" class="btn-planned-recalc" id="bot3-recalc-btn" title="Recalculate now with fresh market data">
-                    <span class="recalc-spin-icon">🔄</span>
-                    <span class="recalc-text" data-i18n="recalcNow">Recalc</span>
-                  </button>
-                </div>
-              </div>
-              <div class="planned-trades-list" id="bot3-planned-trades">
-                <!-- Rendered dynamically -->
-              </div>
-              <div class="planned-trades-footer" id="bot3-planned-footer">
-                <span class="planned-footer-text" data-i18n="bot3PlannedFooter">🔄 Automatic 60-second recalculation: tracking live D1, W1 &amp; Prev W1 extreme levels</span>
-                <span class="planned-last-updated" id="bot3-last-updated">Updated: Just now</span>
-              </div>
+          <div class="news-next-card" id="watch-next-card" style="margin-top: 0;">
+            <div class="news-next-head">
+              <span class="news-next-label" data-i18n="bot5NextEvent">Next event</span>
+              <span class="news-countdown" id="watch-countdown">—</span>
             </div>
-
-            <ul class="bot-cond" id="bot3-cond" style="display: none;">
-              <!-- Rendered dynamically -->
-            </ul>
-            <div class="bot-line" id="bot3-running-line"><b>রানিং ট্রেড:</b> 0 / 1 (স্লট খালি: 1 টি)</div>
-            <div class="bot-line" id="bot3-pos"><b>ট্রেড:</b> নেই</div>
-            <div class="bot-line" id="bot3-last">নির্বাচিত মার্কেট: <b>XAUUSDm</b> · 0 খোলা / 0 ক্লোজড · প্রস্তুত</div>
+            <div class="news-next-title" id="watch-event-title" data-i18n="bot5NoNews">No upcoming high-impact event</div>
+            <div class="news-next-meta" id="watch-event-meta">—</div>
+            <div class="news-bias-row">
+              <span class="news-bias-pill" id="watch-bias-pill">WAIT</span>
+              <span class="news-predicted-move" id="watch-predicted-move"></span>
+              <span class="news-bias-reason" id="watch-bias-reason">—</span>
+            </div>
+            <div class="news-impacted-block" id="watch-next-impacted-block">
+              <div class="news-impacted-title">🎯 IMPACTED MARKETS &amp; DIRECTION (BUY / SELL):</div>
+              <div class="news-impacted-chips" id="watch-next-impacted-chips"></div>
+            </div>
+            <div class="news-plan" id="watch-plan">—</div>
+            <div class="news-filtered-list" id="watch-filtered-news-list"></div>
           </div>
         </div>
-      </section>
 
-      <!-- positions + feed -->
-      <section class="split">
-        <div class="panel grow">
+
+        <!-- 02 · PRESSURE DIAL (only the selected market) -->
+        <div class="flow-stage" id="stage-dial">
+          <div class="flow-step-row">
+            <span class="flow-step-num">02</span>
+            <span class="flow-step-name" data-i18n="flowStepDial">PRESSURE DIAL</span>
+            <span class="flow-step-hint" data-i18n="flowStepDialHint">only the market you selected</span>
+            <span class="flow-step-live"><i></i><span data-i18n="flowLive">LIVE</span></span>
+          </div>
+
+        <!-- ================= MARKET PRESSURE WATCH DIALS (BUYER vs SELLER) ================= -->
+        <section class="panel watch-panel" id="market-watch-panel">
           <div class="panel-head">
-            <h3><span data-i18n="openPositions">Open positions</span> <span class="pill" id="pos-count">0</span></h3>
-            <span class="panel-total" id="pos-total">0.00</span>
+            <div class="watch-head-left">
+              <span class="watch-panel-icon-wrap">
+                <svg class="watch-panel-icon-svg" viewBox="0 0 24 24">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                  <circle cx="12" cy="12" r="7"/>
+                  <path d="M12 12l2-4"/>
+                </svg>
+              </span>
+              <div>
+                <h3 class="watch-main-title">
+                  <span data-i18n="watchTitle">Market Pressure Watch Dials</span>
+                  <span class="pill watch-pill" id="watch-summary-pill">ORDER FLOW CALIBRATED</span>
+                </h3>
+                <p class="watch-subtitle" data-i18n="watchSubtitle">রিয়েল-টাইম ক্যান্ডেল ভলিউম ও বায়ার/সেলার চাপের লাইভ মেশিন ওয়াচ ডায়াল</p>
+              </div>
+            </div>
+            <div class="watch-head-right">
+              <span class="watch-timer-badge" id="watch-timer-badge" title="Live WebSocket stream - no refresh timer">
+                <span class="timer-pulse-dot"></span>
+                <span id="watch-timer-text">LIVE · --:--:--</span>
+              </span>
+              <button type="button" class="watch-refresh-btn" id="watch-refresh-btn" title="Force one immediate recompute (manual only)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+              </button>
+            </div>
           </div>
-          <div class="table-scroll">
-            <table class="tbl">
-              <thead>
-                <tr>
-                  <th data-i18n="symbol">Symbol</th>
-                  <th data-i18n="side">Side</th>
-                  <th data-i18n="lots">Lots</th>
-                  <th data-i18n="openPrice">Open</th>
-                  <th data-i18n="currentPrice">Current</th>
-                  <th data-i18n="sl">S/L</th>
-                  <th data-i18n="tp">T/P</th>
-                  <th data-i18n="swap">Swap</th>
-                  <th class="num" data-i18n="profit">P/L</th>
-                  <th data-i18n="opened">Opened</th>
-                </tr>
-              </thead>
-              <tbody id="positions-body"></tbody>
-            </table>
-            <div id="pos-empty" class="empty" data-i18n="noPositions">No open positions right now.</div>
+
+          <div class="watch-grid" id="market-watch-grid">
+            <!-- Initial Telemetry Loading Placeholder -->
+            <div style="color:var(--txt-dim);padding:24px;font-size:13px;grid-column:1/-1;text-align:center;font-family:var(--mono);">
+              <span class="machine-led-pulse" style="display:inline-block;margin-right:8px;"></span>
+              CALIBRATING MACHINE TELEMETRY CHRONOMETERS & SYMBOLS...
+            </div>
+          </div>
+        </section>
+        </div>
+
+
+        <!-- 03 · AI MARKET DIRECTION · next day -->
+        <div class="flow-stage" id="stage-outlook">
+          <div class="flow-step-row">
+            <span class="flow-step-num">03</span>
+            <span class="flow-step-name" data-i18n="flowStepOutlook">AI DIRECTION · NEXT DAY</span>
+            <span class="flow-step-hint" data-i18n="flowStepOutlookHint">every news source read into one verdict per market</span>
+            <span class="flow-step-live"><i></i><span data-i18n="flowLive">LIVE</span></span>
+          </div>
+
+          <div class="news-outlook" id="watch-outlook" style="margin-top: 0;">
+            <div class="news-outlook-head">
+              <span class="news-outlook-title" data-i18n="bot5OutlookTitle">🤖 AI Market Direction · next day</span>
+              <span class="news-outlook-sub" data-i18n="bot5OutlookSub">every news source read into one verdict per market</span>
+            </div>
+            <div class="news-outlook-chips" id="watch-outlook-chips"></div>
+          </div>
+        </div>
+        <!-- 04 · LIVE CURVE -->
+        <div class="flow-stage" id="stage-curve">
+          <div class="flow-step-row">
+            <span class="flow-step-num">04</span>
+            <span class="flow-step-name" data-i18n="flowCurveTitle">LIVE CURVE</span>
+            <span class="flow-step-hint" data-i18n="flowCurveSub">selected market · tick by tick</span>
+            <span class="flow-step-live"><i></i><span data-i18n="flowLive">LIVE</span></span>
+          </div>
+
+          <div class="flow-curve-shell">
+            <div class="flow-curve-head">
+              <span class="fc-live"><i></i><span data-i18n="flowCurveTitle">LIVE CURVE</span></span>
+              <span class="fc-sub" id="flow-curve-sub" data-i18n="flowCurveSub">selected market · tick by tick</span>
+            </div>
+            <div class="flow-curve-box" id="flow-curve-box"></div>
+
+            <!-- ================= LIVE TRADERS ORDER FLOW TERMINAL (Connected to 01 Market) ================= -->
+            <div class="traders-terminal-panel" id="traders-terminal-panel">
+              <div class="tt-header">
+                <div class="tt-title-wrap">
+                  <span class="tt-pulse-dot"></span>
+                  <span class="tt-title">TRADERS ORDER FLOW TERMINAL</span>
+                  <span class="tt-conn-badge" id="tt-market-badge" title="Synchronized with Stage 01 Market">🔗 MARKET 01: <b id="tt-connected-symbol">BTCUSDTm</b></span>
+                </div>
+                <div class="tt-stats-bar">
+                  <div class="tt-stat-chip tt-buy-vol">
+                    <span class="tt-stat-lbl">BUY VOL</span>
+                    <b id="tt-buy-vol-val">50% ($0)</b>
+                  </div>
+                  <div class="tt-stat-chip tt-sell-vol">
+                    <span class="tt-stat-lbl">SELL VOL</span>
+                    <b id="tt-sell-vol-val">50% ($0)</b>
+                  </div>
+                  <div class="tt-stat-chip tt-speed">
+                    <span class="tt-stat-lbl">SPEED</span>
+                    <b id="tt-speed-val">0.0 tx/s</b>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Filter tabs & Volume split meter -->
+              <div class="tt-subbar">
+                <div class="tt-filters">
+                  <button type="button" class="tt-filter-btn active" data-filter="all">ALL</button>
+                  <button type="button" class="tt-filter-btn" data-filter="buy">BUYS</button>
+                  <button type="button" class="tt-filter-btn" data-filter="sell">SELLS</button>
+                  <button type="button" class="tt-filter-btn" data-filter="whale">WHALES 🐋</button>
+                </div>
+                <div class="tt-meter-wrap" title="Buyer vs Seller Volume Split">
+                  <div class="tt-meter-bar">
+                    <div class="tt-meter-buy" id="tt-meter-buy" style="width: 50%;"></div>
+                    <div class="tt-meter-sell" id="tt-meter-sell" style="width: 50%;"></div>
+                  </div>
+                </div>
+                <div class="tt-controls">
+                  <button type="button" class="tt-ctrl-btn" id="tt-pause-btn" title="Pause / Resume Live Tape">⏸</button>
+                  <button type="button" class="tt-ctrl-btn" id="tt-clear-btn" title="Clear Tape">🗑</button>
+                </div>
+              </div>
+
+              <!-- Terminal Columns Header -->
+              <div class="tt-columns-head">
+                <span class="tt-col-time">TIME</span>
+                <span class="tt-col-side">SIDE</span>
+                <span class="tt-col-price">PRICE</span>
+                <span class="tt-col-amount">SIZE</span>
+                <span class="tt-col-total">TOTAL ($)</span>
+                <span class="tt-col-trader">TRADER / ROUTE</span>
+              </div>
+
+              <!-- Live Scrolling Trades Tape -->
+              <div class="tt-tape-body" id="tt-tape-body">
+                <!-- Dynamically populated live trades -->
+              </div>
+
+              <!-- Terminal Footer Summary -->
+              <div class="tt-footer">
+                <span class="tt-foot-info"><span class="tt-foot-dot"></span> <span id="tt-status-text">Connected to Market 01 feed · 0ms latency</span></span>
+                <span class="tt-foot-total" id="tt-foot-net-delta">DELTA: <b class="pos">+$0</b></span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="panel feed-panel">
+
+        <!-- 08 · TRADING SESSIONS -->
+        <div class="flow-stage" id="stage-sessions">
+          <div class="flow-step-row">
+            <span class="flow-step-num">08</span>
+            <span class="flow-step-name" data-i18n="flowStepSessions">SESSIONS</span>
+            <span class="flow-step-hint" data-i18n="flowStepSessionsHint">live clocks, buy/sell bias &amp; dollar forecast</span>
+            <span class="flow-step-live"><i></i><span data-i18n="flowLive">LIVE</span></span>
+          </div>
+
+          <!-- ============ TRADING SESSIONS (Sydney / Tokyo / London / New York) ============ -->
+          <div class="sessions-board" id="sessions-board">
+            <div class="sessions-head">
+              <div class="sessions-head-left">
+                <span class="sessions-title" data-i18n="sessTitle">🌐 Trading Sessions · live clock &amp; AI dollar forecast</span>
+                <span class="sessions-sub" data-i18n="sessSub">Sydney (Australian) · Tokyo (Asian) · London (European) · New York (North American)</span>
+              </div>
+              <div class="sessions-head-right">
+                <label class="sessions-pick">
+                  <span data-i18n="sessMarket">Market</span>
+                  <select id="sessions-market"></select>
+                </label>
+                <span class="sessions-updated" id="sessions-updated">—</span>
+              </div>
+            </div>
+            <div class="sessions-summary" id="sessions-summary">—</div>
+            <div class="sessions-radar-panel" id="sessions-radar-panel">
+              <div class="sessions-radar-head">
+                <div class="sessions-radar-title-wrap">
+                  <span class="sessions-radar-icon">📊</span>
+                  <span class="sessions-radar-title" data-i18n="sessAllMarketsTitle">All Markets Session Direction &amp; Dollar Forecast</span>
+                  <span class="sessions-radar-session-badge" id="sess-active-session-badge">—</span>
+                </div>
+                <div class="sessions-radar-counts" id="sess-radar-counts">—</div>
+              </div>
+              <div class="sessions-radar-chips" id="sess-radar-chips"></div>
+            </div>
+            <div class="sessions-grid" id="sessions-grid">
+              <div class="sessions-loading" data-i18n="sessLoading">Starting the session clock…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 06 · FULL AI MARKET ANALYSIS -->
+        <div class="flow-stage" id="stage-ai">
+          <div class="flow-step-row">
+            <span class="flow-step-num">06</span>
+            <span class="flow-step-name" data-i18n="flowStepAi">FULL AI ANALYSIS</span>
+            <span class="flow-step-hint" data-i18n="flowStepAiHint">1m · 5m · 15m · 1h · 4h · 1Day candles + dials + news</span>
+            <span class="flow-step-live"><i></i><span data-i18n="flowLive">LIVE</span></span>
+          </div>
+
+          <!-- ============ FULL AI MARKET ANALYSIS · 1m / 5m / 15m / 1h / 4h / 1Day + PRICE TARGETS ============ -->
+          <div class="ai-board" id="ai-market-board">
+            <div class="ai-head">
+              <div class="ai-head-left">
+                <span class="ai-title" data-i18n="aiTitle">🧠 Full AI Market Analysis · live BUY / SELL</span>
+                <span class="ai-sub" data-i18n="aiSub">1m · 5m · 15m · 1h · 4h · 1Day candles + news + live dials → where the price goes</span>
+              </div>
+              <div class="ai-head-right">
+                <label class="ai-pick">
+                  <span data-i18n="aiMarket">Market</span>
+                  <select id="ai-market"></select>
+                </label>
+                <span class="ai-updated" id="ai-updated">—</span>
+              </div>
+            </div>
+            <div class="ai-tf-tabs" id="ai-tf-tabs"></div>
+            <div class="ai-verdict" id="ai-verdict">—</div>
+            <div class="ai-targets" id="ai-targets">—</div>
+            <div class="ai-grid" id="ai-grid">
+              <div class="sessions-loading" data-i18n="aiLoading">Reading the candles…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 07 · NEXT EXTREME SETUPS -->
+        <div class="flow-stage" id="stage-setups">
+          <div class="flow-step-row">
+            <span class="flow-step-num">07</span>
+            <span class="flow-step-name" data-i18n="flowStepSetups">NEXT SETUPS</span>
+            <span class="flow-step-hint" data-i18n="flowStepSetupsHint">the next 5 extreme executions, recalculated every 60 s</span>
+            <span class="flow-step-live"><i></i><span data-i18n="flowLive">LIVE</span></span>
+          </div>
+
+          <!-- 5 Planned Upcoming Trades list -->
+          <div class="planned-trades-card-wrap">
+            <div class="planned-trades-head">
+              <div class="planned-head-title-wrap">
+                <div class="planned-trades-title" data-i18n="bot3PlannedTitle">Next 5 Extreme Execution Setups (Upcoming Trades)</div>
+                <span class="planned-cycle-badge" id="bot3-recalc-badge" data-i18n="bot3PlannedCycle">⚡ 60s Auto Calculation</span>
+              </div>
+              <div class="planned-head-actions">
+                <span class="planned-timer-pill" id="bot3-planned-timer" title="Auto-recalculates every 60 seconds">⏱️ 60s</span>
+                <button type="button" class="btn-planned-recalc" id="bot3-recalc-btn" title="Recalculate now with fresh market data">
+                  <span class="recalc-spin-icon">🔄</span>
+                  <span class="recalc-text" data-i18n="recalcNow">Recalc</span>
+                </button>
+              </div>
+            </div>
+            <div class="planned-trades-list" id="bot3-planned-trades">
+              <!-- Rendered dynamically -->
+            </div>
+            <div class="planned-trades-footer" id="bot3-planned-footer">
+              <span class="planned-footer-text" data-i18n="bot3PlannedFooter">🔄 Automatic 60-second recalculation: tracking live D1, W1 &amp; Prev W1 extreme levels</span>
+              <span class="planned-last-updated" id="bot3-last-updated">Updated: Just now</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ================= PERFORMANCE ================= -->
+      <section class="perf-block" id="perf-block">
+        <div class="flow-step-row">
+          <span class="flow-step-num">10</span>
+          <span class="flow-step-name" data-i18n="flowStepPerf">PERFORMANCE</span>
+          <span class="flow-step-hint" data-i18n="flowStepPerfHint">today · 7D · 30D · 90D · this session</span>
+        </div>
+        <!-- stats -->
+        <section class="stats-head">
+          <div class="seg" id="period-seg">
+            <button class="seg-btn active" data-period="today" data-i18n="today">Today</button>
+            <button class="seg-btn" data-period="7d">7D</button>
+            <button class="seg-btn" data-period="30d">30D</button>
+            <button class="seg-btn" data-period="90d">90D</button>
+            <button class="seg-btn" data-period="session" data-i18n="session">Session</button>
+          </div>
+          <div class="head-right">
+            <span class="muted" id="last-update">—</span>
+            <button id="refresh-btn" class="icon-btn" title="Refresh">⟳</button>
+          </div>
+        </section>
+
+        <section class="stat-grid">
+          <div class="stat-card wide" id="card-net">
+            <span class="stat-label" id="stat-net-label" data-i18n="totalProfitToday">Total profit today</span>
+            <span class="stat-value big" id="stat-net">0.00</span>
+            <span class="stat-sub" id="stat-net-sub">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="wins">Profitable trades</span>
+            <span class="stat-value pos-color" id="stat-wins">0</span>
+            <span class="stat-sub" id="stat-wins-sub">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="losses">Losing trades</span>
+            <span class="stat-value neg-color" id="stat-losses">0</span>
+            <span class="stat-sub" id="stat-losses-sub">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="winRate">Win rate</span>
+            <span class="stat-value" id="stat-winrate">0%</span>
+            <span class="stat-sub" id="stat-winrate-sub">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="floating">Floating P/L</span>
+            <span class="stat-value" id="stat-floating">0.00</span>
+            <span class="stat-sub" id="stat-floating-sub">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="profitFactor">Profit factor</span>
+            <span class="stat-value" id="stat-pf">—</span>
+            <span class="stat-sub" id="stat-pf-sub">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="bestWorst">Best / Worst</span>
+            <span class="stat-value small" id="stat-bw">—</span>
+            <span class="stat-sub" id="stat-bw-sub">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="volume">Lots traded</span>
+            <span class="stat-value" id="stat-volume">0.00</span>
+            <span class="stat-sub" id="stat-volume-sub">—</span>
+          </div>
+        </section>
+      </section>
+
+
+
+      <aside class="side-drawer side-drawer-left" id="positions-drawer" aria-hidden="true">
+        <div class="drawer-head">
+          <div class="drawer-tabs">
+            <button type="button" class="drawer-tab active" id="tab-btn-positions" data-tab="positions">
+              <span>📌</span>
+              <span data-i18n="railPositions">POSITIONS</span>
+              <span class="drawer-tab-badge" id="tab-badge-pos">0</span>
+            </button>
+            <button type="button" class="drawer-tab" id="tab-btn-history" data-tab="history">
+              <span>📜</span>
+              <span data-i18n="tradeHistory">TRADE HISTORY</span>
+              <span class="drawer-tab-badge" id="tab-badge-hist">0</span>
+            </button>
+          </div>
+          <button type="button" class="drawer-close" data-drawer-close="left" aria-label="Close">✕</button>
+        </div>
+        <div class="drawer-body">
+          <!-- VIEW 1: OPEN POSITIONS -->
+          <div class="drawer-view active" id="view-positions">
+            <div class="panel grow">
+              <div class="panel-head">
+                <h3><span data-i18n="openPositions">Open positions</span> <span class="pill" id="pos-count">0</span></h3>
+                <span class="panel-total" id="pos-total">0.00</span>
+              </div>
+              <div class="table-scroll">
+                <table class="tbl">
+                  <thead>
+                    <tr>
+                      <th data-i18n="symbol">Symbol</th>
+                      <th data-i18n="side">Side</th>
+                      <th data-i18n="lots">Lots</th>
+                      <th data-i18n="openPrice">Open</th>
+                      <th data-i18n="currentPrice">Current</th>
+                      <th data-i18n="sl">S/L</th>
+                      <th data-i18n="tp">T/P</th>
+                      <th data-i18n="swap">Swap</th>
+                      <th class="num" data-i18n="profit">P/L</th>
+                      <th data-i18n="opened">Opened</th>
+                    </tr>
+                  </thead>
+                  <tbody id="positions-body"></tbody>
+                </table>
+                <div id="pos-empty" class="empty" data-i18n="noPositions">No open positions right now.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- VIEW 2: TRADE HISTORY -->
+          <div class="drawer-view" id="view-history">
+            <section class="panel grow" style="margin: 0;">
+              <div class="panel-head wrap">
+                <h3><span data-i18n="tradeHistory">Trade history</span> <span class="pill" id="hist-count">0</span></h3>
+                <div class="filters">
+                  <select id="hist-period" class="inp">
+                    <option value="today" data-i18n="today">Today</option>
+                    <option value="7" selected>7 days</option>
+                    <option value="30">30 days</option>
+                    <option value="90">90 days</option>
+                    <option value="all" data-i18n="allTime">All time</option>
+                  </select>
+                  <select id="hist-result" class="inp">
+                    <option value="all" data-i18n="allResults">All results</option>
+                    <option value="win" data-i18n="winsOnly">Wins only</option>
+                    <option value="loss" data-i18n="lossesOnly">Losses only</option>
+                  </select>
+                  <input id="hist-symbol" class="inp" list="symbol-list" placeholder="Symbol" style="width:120px" />
+                  <datalist id="symbol-list"></datalist>
+                  <input id="hist-search" class="inp" placeholder="Search comment / ticket" style="width:170px" />
+                  <button id="hist-csv" class="btn small ghost" data-i18n="exportCsv">Export CSV</button>
+                </div>
+              </div>
+              <div class="table-scroll tall">
+                <table class="tbl">
+                  <thead>
+                    <tr id="history-head-row">
+                      <th id="th-close" class="sortable" data-key="close_time" data-i18n="closeTime">Close time</th>
+                      <th class="sortable" data-key="symbol" data-i18n="symbol">Symbol</th>
+                      <th class="sortable" data-key="side" data-i18n="side">Side</th>
+                      <th class="sortable" data-key="volume" data-i18n="lots">Lots</th>
+                      <th class="sortable" data-key="open_price" data-i18n="openPrice">Open</th>
+                      <th class="sortable" data-key="close_price" data-i18n="closePrice">Close</th>
+                      <th class="sortable num" data-key="commission" data-i18n="commission">Comm.</th>
+                      <th class="sortable num" data-key="swap" data-i18n="swap">Swap</th>
+                      <th class="sortable num" data-key="net_profit" data-i18n="netPL">Net P/L</th>
+                      <th class="sortable" data-key="magic" data-i18n="magic">Magic</th>
+                      <th class="sortable" data-key="comment" data-i18n="comment">Comment</th>
+                      <th class="sortable num" data-key="duration" data-i18n="duration">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody id="history-body"></tbody>
+                </table>
+                <div id="hist-empty" class="empty" data-i18n="noHistory">No closed trades in this range yet.</div>
+              </div>
+              <div class="panel-foot">
+                <button id="hist-more" class="btn small ghost hidden" data-i18n="loadMore">Load more</button>
+                <span class="muted" id="hist-foot"></span>
+              </div>
+            </section>
+          </div>
+        </div>
+      </aside>
+
+      <!-- side drawer: all bots (right) -->
+      <aside class="side-drawer side-drawer-right" id="bots-drawer" aria-hidden="true">
+        <div class="drawer-head">
+          <div class="drawer-tabs">
+            <button type="button" class="drawer-tab active" id="tab-btn-bots" data-tab="bots">
+              <span>🤖</span>
+              <span data-i18n="drawerBotsTitle">ALL BOTS &amp; NEWS</span>
+              <span class="drawer-tab-badge" id="tab-badge-bots">7</span>
+            </button>
+            <button type="button" class="drawer-tab" id="tab-btn-activity" data-tab="activity">
+              <span>⚡</span>
+              <span data-i18n="activity">ACTIVITY LOG</span>
+              <span class="drawer-tab-badge" id="tab-badge-feed">0</span>
+            </button>
+          </div>
+          <div class="drawer-head-actions">
+            <button type="button" class="btn ghost small" id="bots-fs-toggle" title="Toggle Fullscreen View">
+              <span id="bots-fs-icon">⛶</span> <span id="bots-fs-label">Fullscreen</span>
+            </button>
+            <button type="button" class="drawer-close" data-drawer-close aria-label="Close bots drawer">✕</button>
+          </div>
+        </div>
+        <div class="drawer-body" id="bots-drawer-body">
+          <!-- VIEW 1: ALL BOTS & ECONOMIC NEWS -->
+          <div class="drawer-view active" id="view-bots">
+            <div class="bots-quick-nav" id="bots-quick-nav">
+              <button type="button" class="b-nav-pill active" data-bot="all">All View</button>
+              <button type="button" class="b-nav-pill" data-bot="all-news-panel">📰 All Economic News</button>
+              <button type="button" class="b-nav-pill" data-bot="bot1-panel">🤖 1. Gold Straddle</button>
+              <button type="button" class="b-nav-pill" data-bot="bot2-panel">🕯️ 2. Candle &amp; Structure</button>
+              <button type="button" class="b-nav-pill" data-bot="bot4-panel">🪜 3. Pre-Trade Ladder</button>
+              <button type="button" class="b-nav-pill" data-bot="bot6-panel">🎯 4. Pre-Trade Entry</button>
+              <button type="button" class="b-nav-pill" data-bot="bot7-panel">🔄 5. Reversal Candle</button>
+              <button type="button" class="b-nav-pill" data-bot="bot3-panel">⚡ 6. Extreme Sniper</button>
+              <button type="button" class="b-nav-pill" data-bot="bot5-panel">📰 7. News Trader</button>
+            </div>
+
+        <!-- ================= ALL ECONOMIC NEWS (MULTI-SOURCE GLOBAL FEEDS) ================= -->
+        <section class="panel bot-panel news-panel all-economic-news-panel" id="all-news-panel">
+          <div class="panel-head">
+            <div class="all-news-head-left">
+              <span class="all-news-icon">📰</span>
+              <div>
+                <h3 class="all-news-main-title">
+                  <span data-i18n="bot5NewsList">All economic news</span>
+                  <span id="bot5-news-count" class="news-total-pill"></span>
+                </h3>
+                <p class="all-news-subtitle">Live multi-source global economic calendar &amp; breaking market events</p>
+              </div>
+            </div>
+            <div class="all-news-head-right">
+              <span class="radar-timer-pill" id="bot5-feed-state">—</span>
+              <button type="button" id="bot5-refresh" class="btn small ghost" data-i18n="bot5Refresh">🔄 Refresh news</button>
+            </div>
+          </div>            <div class="all-news-body">
+              <div class="all-news-sources-bar">
+                <span class="all-news-sources-title">🌐 LIVE SOURCES:</span>
+                <div class="news-sources" id="bot5-news-sources"></div>
+              </div>
+              <!-- impact level filter: ALL / HIGH / MEDIUM / LOW -->
+              <div class="news-impact-filter-bar news-impact-all-bar" id="news-impact-all-bar">
+                <button type="button" class="news-impact-btn imp-filter-all active" data-imp="all">ALL</button>
+                <button type="button" class="news-impact-btn imp-filter-high" data-imp="high"><span class="impact-dot"></span> High</button>
+                <button type="button" class="news-impact-btn imp-filter-medium" data-imp="medium"><span class="impact-dot"></span> Medium</button>
+                <button type="button" class="news-impact-btn imp-filter-low" data-imp="low"><span class="impact-dot"></span> Low</button>
+              </div>
+              <div class="news-list all-news-feed" id="bot5-news"></div>
+              </div>
+        </section>
+
+        <!-- auto trading (gold straddle bot) -->
+        <section class="panel bot-panel" id="bot1-panel">
+          <div class="panel-head">
+            <h3>🤖 <span data-i18n="botTitle">Auto Trading</span>
+              <span class="pill" id="bot-symbol">XAUUSD</span>
+            </h3>
+            <span class="bot-chip stopped" id="bot-chip">STOPPED</span>
+          </div>
+          <div class="bot-body">
+            <div class="bot-left">
+              <div class="bot-settings">
+                <div class="bot-field">
+                  <label for="bot-lot" data-i18n="botLot">Lot size</label>
+                  <input id="bot-lot" type="number" step="0.01" min="0.01" value="0.01" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot-gap" data-i18n="botGap">Gap ($)</label>
+                  <input id="bot-gap" type="number" step="0.1" min="0.1" value="2.0" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot-sl" data-i18n="botSL">SL ($)</label>
+                  <input id="bot-sl" type="number" step="0.1" min="0" value="4.0" />
+                </div>
+              </div>
+              <div class="bot-market">
+                <div class="bot-market-head">
+                  <span class="bot-market-label" data-i18n="botSymbol">Market</span>
+                  <span id="bot-symbol-name" class="bot-market-active">XAUUSDm</span>
+                </div>
+                <div class="bot-market-row">
+                  <div id="bot-market-chips" class="chips bot-chips-side">
+                    <button type="button" class="chip" data-sym="BTCUSDTm">BTCUSDTm</button>
+                    <button type="button" class="chip" data-sym="BTCUSDm">BTCUSDm</button>
+                    <button type="button" class="chip" data-sym="XAUUSD247m">XAUUSD247m</button>
+                    <button type="button" class="chip active" data-sym="XAUUSDm">XAUUSDm</button>
+                    <button type="button" class="chip" data-sym="DXY">DXY</button>
+                    <button type="button" class="chip" data-sym="USOILm">Crude Oil</button>
+                    <button type="button" class="chip" data-sym="XAUGBPm">XAUGBP</button>
+                    <button type="button" class="chip" data-sym="USDJPYm">USDJPY</button>
+                    <button type="button" class="chip" data-sym="EURUSDm">EURUSD</button>
+                    <button type="button" class="chip" data-sym="USTECm">USTEC</button>
+                  </div>
+                  <div class="bot-side-curve" id="bot1-curve-box"></div>
+                </div>
+              </div>
+              <div class="bot-actions">
+                <button id="bot-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
+                <button id="bot-close" class="btn ghost small" data-i18n="botClose">Close now</button>
+              </div>
+            </div>
+            <div class="bot-info">
+              <div class="pricemap" id="bot-pricemap">
+                <div class="pricemap-head">
+                  <span class="pricemap-title"><span class="pricemap-live"></span><span data-i18n="priceMapTitle">Live Level Map</span></span>
+                  <span class="pricemap-price" id="bot-map-price">—</span>
+                </div>
+                <div class="pricemap-rows" id="bot-map-rows"></div>
+              </div>
+              <div class="bot-cond-title" data-i18n="condTitle" style="display: none;">Conditions</div>
+              <ul class="bot-cond" id="bot-cond" style="display: none;"></ul>
+              <div class="bot-line" id="bot-orders">—</div>
+              <div class="bot-line" id="bot-pos">—</div>
+              <div class="bot-line" id="bot-last">—</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= AUTO TRADING BOT 2 (CANDLE MOMENTUM & STRUCTURE) ================= -->
+        <section class="panel bot-panel" id="bot2-panel">
+          <div class="panel-head">
+            <h3>🤖 <span data-i18n="bot2Title">Auto Trading (Candle &amp; Structure)</span>
+              <span class="pill" id="bot2-symbol">BTCUSDTm</span>
+              <span class="pill trend-pill" id="bot2-trend-pill">Watch: —</span>
+            </h3>
+            <span class="bot-chip stopped" id="bot2-chip">STOPPED</span>
+          </div>
+          <div class="bot-body">
+            <div class="bot-left">
+              <div class="bot-settings bot-settings-4">
+                <div class="bot-field">
+                  <label for="bot2-lot" data-i18n="botLot">Lot size</label>
+                  <input id="bot2-lot" type="number" step="0.01" min="0.01" value="0.01" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot2-max-trades" data-i18n="bot2MaxTrades">Max Trades</label>
+                  <input id="bot2-max-trades" type="number" step="1" min="1" max="50" value="1" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot2-tp" data-i18n="bot2TP">TP ($)</label>
+                  <input id="bot2-tp" type="number" step="0.05" min="0.01" value="0.10" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot2-sl" data-i18n="bot2SL">SL ($)</label>
+                  <input id="bot2-sl" type="number" step="0.1" min="0.05" value="2.00" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot2-block-start" data-i18n="bot2BlockStart">First block (s)</label>
+                  <input id="bot2-block-start" type="number" step="1" min="0" max="59" value="10" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot2-block-end" data-i18n="bot2BlockEnd">Last block (s)</label>
+                  <input id="bot2-block-end" type="number" step="1" min="0" max="59" value="10" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot2-block-mid-from" data-i18n="bot2BlockMidFrom">Mid from (s)</label>
+                  <input id="bot2-block-mid-from" type="number" step="1" min="0" max="59" value="25" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot2-block-mid-to" data-i18n="bot2BlockMidTo">Mid to (s)</label>
+                  <input id="bot2-block-mid-to" type="number" step="1" min="0" max="59" value="35" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot2-watch-min" data-i18n="bot2WatchPct">Watch %</label>
+                  <input id="bot2-watch-min" type="number" step="1" min="1" max="99" value="60" />
+                </div>
+              </div>
+
+              <div class="bot-hint" data-i18n="bot2BlockHint">1-minute candle time-window: no trade in the first N seconds, the last N seconds, or the middle window — values you enter are used exactly.</div>
+              <div class="bot-hint" data-i18n="bot2WatchHint">Watch ON: trades only when that side's dial pressure is at or above the Watch % you enter — nothing is fixed at 60%. Watch OFF: the dial is ignored and the bot follows the candle (candle up → BUY, candle down → SELL), one trade every 2.5s. Reverse flips whichever direction it would take.</div>
+
+              <div class="bot-market">
+                <div class="bot-market-head">
+                  <span class="bot-market-label" data-i18n="botSymbol">Market</span>
+                  <span id="bot2-symbol-name" class="bot-market-active">BTCUSDTm</span>
+                </div>
+                <div class="bot-market-row">
+                  <div id="bot2-market-chips" class="chips bot-chips-side">
+                    <button type="button" class="chip active" data-sym="BTCUSDTm">BTCUSDTm</button>
+                    <button type="button" class="chip" data-sym="BTCUSDm">BTCUSDm</button>
+                    <button type="button" class="chip" data-sym="XAUUSD247m">XAUUSD247m</button>
+                    <button type="button" class="chip" data-sym="XAUUSDm">XAUUSDm</button>
+                    <button type="button" class="chip" data-sym="DXY">DXY</button>
+                    <button type="button" class="chip" data-sym="USOILm">Crude Oil</button>
+                    <button type="button" class="chip" data-sym="XAUGBPm">XAUGBPm</button>
+                    <button type="button" class="chip" data-sym="USDJPYm">USDJPYm</button>
+                    <button type="button" class="chip" data-sym="EURUSDm">EURUSDm</button>
+                    <button type="button" class="chip" data-sym="USTECm">USTECm</button>
+                  </div>
+                  <div class="bot-side-curve" id="bot2-curve-box"></div>
+                </div>
+              </div>
+
+              <!-- Market Structure Levels (Day & Weekend) -->
+              <div class="bot-structure-wrap">
+                <div class="bot-market-head">
+                  <span class="bot-market-label" data-i18n="bot2StructLevels">Structure Levels (Day &amp; Weekend)</span>
+                  <div class="struct-tf-toggle" id="bot2-tf-toggle">
+                    <button type="button" class="chip active" data-tf="D1">Day (D1)</button>
+                    <button type="button" class="chip" data-tf="W1">Weekend (W1)</button>
+                  </div>
+                </div>
+                <div class="struct-badges-grid" id="bot2-struct-grid">
+                  <div class="struct-card sell">
+                    <div class="struct-card-top">
+                      <span class="s-name">HH</span>
+                      <span class="s-action">SELL</span>
+                    </div>
+                    <span class="s-price" id="bot2-hh">—</span>
+                    <span class="s-sub">Higher High</span>
+                  </div>
+                  <div class="struct-card sell">
+                    <div class="struct-card-top">
+                      <span class="s-name">LH</span>
+                      <span class="s-action">SELL</span>
+                    </div>
+                    <span class="s-price" id="bot2-lh">—</span>
+                    <span class="s-sub">Lower High</span>
+                  </div>
+                  <div class="struct-card buy">
+                    <div class="struct-card-top">
+                      <span class="s-name">HL</span>
+                      <span class="s-action">BUY</span>
+                    </div>
+                    <span class="s-price" id="bot2-hl">—</span>
+                    <span class="s-sub">Higher Low</span>
+                  </div>
+                  <div class="struct-card buy">
+                    <div class="struct-card-top">
+                      <span class="s-name">LL</span>
+                      <span class="s-action">BUY</span>
+                    </div>
+                    <span class="s-price" id="bot2-ll">—</span>
+                    <span class="s-sub">Lower Low</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bot-actions">
+                <button id="bot2-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot2-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
+                <button id="bot2-trend" class="btn bot-trend" title="Watch ON: the dial pressure decides the direction (at or above your Watch %). OFF: the bot follows the candle flow."><span data-i18n="bot2Watch">Watch</span>: <span id="bot2-trend-status" class="trend-badge deactive">OFF</span></button>
+                <button id="bot2-reverse" class="btn bot-trend" title="Reverse: whatever direction the bot would take, it takes the exact opposite."><span data-i18n="bot2Reverse">Reverse</span>: <span id="bot2-reverse-status" class="trend-badge deactive">OFF</span></button>
+                <button id="bot2-check-trend-btn" class="btn ghost small" title="Check the direction now (watch dial or candle flow)"><span data-i18n="bot2CheckTrend">🔄 Check Direction</span></button>
+                <button id="bot2-close" class="btn ghost small" data-i18n="botClose">Close now</button>
+              </div>
+            </div>
+
+            <div class="bot-info">
+              <div class="pricemap" id="bot2-pricemap">
+                <div class="pricemap-head">
+                  <span class="pricemap-title"><span class="pricemap-live"></span><span data-i18n="priceMapTitle">Live Level Map</span></span>
+                  <span class="pricemap-price" id="bot2-map-price">—</span>
+                </div>
+                <div class="pricemap-rows" id="bot2-map-rows"></div>
+              </div>
+              <!-- 60-Second Trend Check System Card -->
+              <div class="bot2-trend-box" id="bot2-trend-box">
+                <div class="trend-box-head">
+                  <div class="trend-box-title">
+                    <span class="trend-radar-wrap">
+                      <span class="trend-radar-dot" id="bot2-radar-dot"></span>
+                      <span class="trend-radar-wave"></span>
+                    </span>
+                    <b data-i18n="bot2TrendSystemTitle">2.5s Trend System:</b>
+                    <span id="bot2-trend-value" class="trend-tag up">UP (BULLISH ▲)</span>
+                  </div>
+                  <div class="trend-box-timer">
+                    <span id="bot2-trend-countdown" class="trend-countdown-pill">⏱️ 2.5s</span>
+                    <button type="button" id="bot2-trend-refresh" class="btn-icon-xs" title="Refresh trend check now">🔄</button>
+                  </div>
+                </div>
+                <!-- Smooth 2.5-Second Countdown Progress Bar -->
+                <div class="trend-bar-track">
+                  <div class="trend-bar-fill" id="bot2-trend-bar"></div>
+                </div>
+                <div class="trend-box-details" id="bot2-trend-details">
+                  Awaiting 2.5-second market trend analysis...
+                </div>
+                <div class="trend-box-footer" id="bot2-trend-footer" data-i18n="bot2TrendDetailsFooter">
+                  ⏱️ প্রতি ২.৫ সেকেন্ড পর পর স্বয়ংক্রিয়ভাবে ট্রেন্ড (UP/DOWN) চেক হচ্ছে ও সেই ট্রেন্ডে ট্রেড নেওয়া হচ্ছে
+                </div>
+              </div>
+
+              <div class="bot-cond-title" data-i18n="condTitle" style="display: none;">Conditions (what the bot does)</div>
+              <ul class="bot-cond" id="bot2-cond" style="display: none;">
+                <li><b>১. লট ও রানিং ট্রেড সীমা:</b> লট <b>0.01</b> · একসাথে সর্বোচ্চ <b>1</b> টি ট্রেড রানিং থাকবে, এর
+                  বেশি হবে না।</li>
+                <li><b>২. ক্যান্ডেল ফ্লো রিভার্সাল:</b> ক্যান্ডেল নিচে নামলে <b>BUY</b> ট্রেড (TP <b>$0.10</b>, SL
+                  <b>$2.00</b>); ক্যান্ডেল উপরে উঠলে <b>SELL</b> ট্রেড (TP <b>$0.10</b>, SL <b>$2.00</b>) — ক্যান্ডেল ফ্লো
+                  এর বিপরীত দিকে ট্রেড।</li>
+                <li><b>৩. মার্কেট স্ট্রাকচার লেভেল:</b>
+                  <br>&nbsp;&nbsp;• <b>Lower Low (LL)</b> প্রাইসে আসলে <b>BUY</b> করবে (৪নং ক্যান্ডেল রুল তখন অফ থাকবে)
+                  <br>&nbsp;&nbsp;• <b>Higher High (HH)</b> প্রাইসে আসলে <b>SELL</b> করবে (৪নং রুল অফ থাকবে)
+                  <br>&nbsp;&nbsp;• <b>Lower High (LH)</b> প্রাইসে আসলে <b>SELL</b> করবে (৪নং রুল অফ থাকবে)
+                  <br>&nbsp;&nbsp;• <b>Higher Low (HL)</b> প্রাইসে আসলে <b>BUY</b> করবে (৪নং রুল অফ থাকবে)
+                </li>
+                <li><b>৪. কন্টিনিউয়াস ট্রেডিং:</b> ক্যান্ডেল এর প্রাইস যত কমবে ও বাড়বে বিপরীত দিকে ট্রেড নিতে থাকবে,
+                  যতক্ষণ না রানিং লিমিট পূর্ণ হয়।</li>
+              </ul>
+              <div class="bot-line" id="bot2-trend-line"><b>Trend Mode:</b> <span class="trend-deactive-text">DEACTIVE (OFF)</span></div>
+              <div class="bot-line" id="bot2-running-line"><b>রানিং ট্রেড:</b> 0 / 1 (স্লট খালি: 1 টি)</div>
+              <div class="bot-line" id="bot2-pos"><b>ট্রেড:</b> নেই</div>
+              <div class="bot-line" id="bot2-last">নির্বাচিত মার্কেট: <b>BTCUSDTm</b> · 0 খোলা / 0 ক্লোজড · প্রস্তুত</div>
+            </div>
+          </div>
+        </section>
+
+
+
+        <!-- Bot 3: Extreme High & Low Structure Sniper (control panel) -->
+        <section class="panel bot-panel" id="bot3-panel">
+          <div class="panel-head">
+            <h3>⚡ <span data-i18n="bot3Title">Auto Trading (Extreme High &amp; Low Structure)</span>
+              <span class="pill" id="bot3-symbol">XAUUSDm</span>
+            </h3>
+            <span class="bot-chip stopped" id="bot3-chip">STOPPED</span>
+          </div>
+          <div class="bot-body">
+            <div class="bot-left">
+              <div class="bot-settings bot-settings-4">
+                <div class="bot-field">
+                  <label for="bot3-lot" data-i18n="botLot">Lot size</label>
+                  <input id="bot3-lot" type="number" step="0.01" min="0.01" value="0.01" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot3-max-trades" data-i18n="bot2MaxTrades">Max Trades</label>
+                  <input id="bot3-max-trades" type="number" step="1" min="1" max="50" value="1" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot3-tp" data-i18n="bot2TP">TP ($)</label>
+                  <input id="bot3-tp" type="number" step="0.05" min="0.01" value="0.50" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot3-sl" data-i18n="bot2SL">SL ($)</label>
+                  <input id="bot3-sl" type="number" step="0.1" min="0.05" value="5.00" />
+                </div>
+              </div>
+              <div class="bot-hint" data-i18n="bot3PlannedFooter">🔄 Automatic 60-second recalculation: tracking live D1, W1 &amp; Prev W1 extreme levels</div>
+
+              <div class="bot-market">
+                <div class="bot-market-head">
+                  <span class="bot-market-label" data-i18n="botSymbol">Market</span>
+                  <span id="bot3-symbol-name" class="bot-market-active">XAUUSDm</span>
+                </div>
+                <div class="bot-market-row">
+                  <div id="bot3-market-chips" class="chips bot-chips-side">
+                    <button type="button" class="chip active" data-sym="XAUUSDm">XAUUSDm</button>
+                    <button type="button" class="chip" data-sym="XAUUSD247m">XAUUSD247m</button>
+                    <button type="button" class="chip" data-sym="BTCUSDTm">BTCUSDTm</button>
+                    <button type="button" class="chip" data-sym="XAUGBPm">XAUGBPm</button>
+                    <button type="button" class="chip" data-sym="DXY">DXY</button>
+                    <button type="button" class="chip" data-sym="USOILm">Crude Oil</button>
+                    <button type="button" class="chip" data-sym="USDJPYm">USDJPYm</button>
+                    <button type="button" class="chip" data-sym="EURUSDm">EURUSDm</button>
+                    <button type="button" class="chip" data-sym="USTECm">USTECm</button>
+                  </div>
+                  <div class="bot-side-curve" id="bot3-curve-box"></div>
+                </div>
+              </div>
+
+              <!-- Extreme Structure Levels (Today D1 / This Week W1 / Prev Week) -->
+              <div class="bot-structure-wrap">
+                <div class="bot-market-head">
+                  <span class="bot-market-label" data-i18n="bot3StructLevels">Extreme Structure Levels (Today, This Week &amp; Prev Week)</span>
+                  <div class="struct-tf-toggle" id="bot3-tf-toggle">
+                    <button type="button" class="chip active" data-tf="D1">D1</button>
+                    <button type="button" class="chip" data-tf="W1">W1</button>
+                    <button type="button" class="chip" data-tf="PREV">Prev</button>
+                  </div>
+                  <span class="radar-zone-pill" id="bot3-zone-pill">MIDDLE (WAITING)</span>
+                  <span class="radar-timer-pill" id="bot3-timer">⏱️ 60s</span>
+                </div>
+                <div class="struct-badges-grid" id="bot3-struct-grid">
+                  <div class="struct-card sell">
+                    <div class="struct-card-top">
+                      <span class="s-name">HH</span>
+                      <span class="s-action">SELL</span>
+                    </div>
+                    <span class="s-price" id="bot3-hh">—</span>
+                    <span class="s-sub" id="bot3-hh-sub">Higher High</span>
+                  </div>
+                  <div class="struct-card sell">
+                    <div class="struct-card-top">
+                      <span class="s-name">LH</span>
+                      <span class="s-action">SELL</span>
+                    </div>
+                    <span class="s-price" id="bot3-lh">—</span>
+                    <span class="s-sub" id="bot3-lh-sub">Lower High</span>
+                  </div>
+                  <div class="struct-card buy">
+                    <div class="struct-card-top">
+                      <span class="s-name">HL</span>
+                      <span class="s-action">BUY</span>
+                    </div>
+                    <span class="s-price" id="bot3-hl">—</span>
+                    <span class="s-sub" id="bot3-hl-sub">Higher Low</span>
+                  </div>
+                  <div class="struct-card buy">
+                    <div class="struct-card-top">
+                      <span class="s-name">LL</span>
+                      <span class="s-action">BUY</span>
+                    </div>
+                    <span class="s-price" id="bot3-ll">—</span>
+                    <span class="s-sub" id="bot3-ll-sub">Lower Low</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bot-actions">
+                <button id="bot3-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot3-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
+                <button id="bot3-close" class="btn ghost small" data-i18n="botClose">Close now</button>
+              </div>
+            </div>
+
+            <div class="bot-info">
+              <div class="pricemap" id="bot3-pricemap">
+                <div class="pricemap-head">
+                  <span class="pricemap-title"><span class="pricemap-live"></span><span data-i18n="priceMapTitle">Live Level Map</span></span>
+                  <span class="pricemap-price" id="bot3-map-price">—</span>
+                </div>
+                <div class="pricemap-rows" id="bot3-map-rows"></div>
+              </div>
+              <div class="bot-cond-title" data-i18n="condTitle" style="display: none;">Conditions (what the bot does)</div>
+              <ul class="bot-cond" id="bot3-cond" style="display: none;"></ul>
+              <div class="bot-line" id="bot3-running-line">—</div>
+              <div class="bot-line" id="bot3-pos">—</div>
+              <div class="bot-line" id="bot3-last">—</div>
+            </div>
+          </div>
+        </section>
+
+
+
+        <!-- Bot 4: Pre-Trade Ladder (N buys above + N sells below) -->
+        <section class="panel bot-panel" id="bot4-panel">
+          <div class="panel-head">
+            <h3>🪜 <span data-i18n="bot4Title">Auto Trading (Pre-Trade Ladder)</span>
+              <span class="pill" id="bot4-symbol">XAUUSDm</span>
+            </h3>
+            <span class="bot-chip stopped" id="bot4-chip">STOPPED</span>
+          </div>
+          <div class="bot-body">
+            <div class="bot-left">
+              <div class="bot-settings bot-settings-4">
+                <div class="bot-field">
+                  <label for="bot4-lot" data-i18n="botLot">Lot size</label>
+                  <input id="bot4-lot" type="number" step="0.01" min="0.01" value="0.01" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot4-price-gap" data-i18n="bot4PriceGap">Price Gap ($)</label>
+                  <input id="bot4-price-gap" type="number" step="0.1" min="0" value="1.0" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot4-pre-gap" data-i18n="bot4PreGap">Pre Trade Gap ($)</label>
+                  <input id="bot4-pre-gap" type="number" step="0.1" min="0" value="0.5" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot4-pre-value" data-i18n="bot4PreValue">Pre Trade Value</label>
+                  <input id="bot4-pre-value" type="number" step="1" min="1" max="50" value="5" />
+                </div>
+              </div>
+              <div class="bot-hint" data-i18n="bot4Hint">Pre Trade Value = levels on each side (N buy above + N sell below). Price Gap = distance from the market price to the first pre-trade, Pre Trade Gap = distance between two pre-trades. Numbering Lot Size ON → lots auto-number 0.01, 0.02, 0.03 … on both sides.</div>
+
+              <div class="bot-market">
+                <div class="bot-market-head">
+                  <span class="bot-market-label" data-i18n="botSymbol">Market</span>
+                  <span id="bot4-symbol-name" class="bot-market-active">XAUUSDm</span>
+                </div>
+                <div class="bot-market-row">
+                  <div id="bot4-market-chips" class="chips bot-chips-side">
+                    <button type="button" class="chip active" data-sym="XAUUSDm">XAUUSDm</button>
+                    <button type="button" class="chip" data-sym="XAUUSD247m">XAUUSD247m</button>
+                    <button type="button" class="chip" data-sym="BTCUSDTm">BTCUSDTm</button>
+                    <button type="button" class="chip" data-sym="BTCUSDm">BTCUSDm</button>
+                    <button type="button" class="chip" data-sym="DXY">DXY</button>
+                    <button type="button" class="chip" data-sym="USOILm">Crude Oil</button>
+                    <button type="button" class="chip" data-sym="XAUGBPm">XAUGBPm</button>
+                    <button type="button" class="chip" data-sym="USDJPYm">USDJPYm</button>
+                    <button type="button" class="chip" data-sym="EURUSDm">EURUSDm</button>
+                    <button type="button" class="chip" data-sym="USTECm">USTECm</button>
+                  </div>
+                  <div class="bot-side-curve" id="bot4-curve-box"></div>
+                </div>
+              </div>
+
+              <div class="bot-actions">
+                <button id="bot4-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot4-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
+                <button id="bot4-numbering" class="btn bot-trend" title="Auto-number the lots 0.01, 0.02, 0.03 …"><span data-i18n="bot4Numbering">Numbering Lot Size</span>: <span id="bot4-numbering-status" class="trend-badge deactive">OFF</span></button>
+                <button id="bot4-close" class="btn ghost small" data-i18n="botClose">Close now</button>
+              </div>
+            </div>
+
+            <div class="bot-info">
+              <div class="pricemap" id="bot4-pricemap">
+                <div class="pricemap-head">
+                  <span class="pricemap-title"><span class="pricemap-live"></span><span data-i18n="priceMapTitle">Live Level Map</span></span>
+                  <span class="pricemap-price" id="bot4-map-price">—</span>
+                </div>
+                <div class="pricemap-rows" id="bot4-map-rows"></div>
+              </div>
+              <div class="radar-box-head">
+                <span class="bot-cond-title" data-i18n="bot4LadderTitle">🪜 Pre-Trade Ladder (Buy above / Sell below)</span>
+                <div class="radar-pills">
+                  <span class="radar-zone-pill" id="bot4-pending-pill">0 PENDING</span>
+                  <span class="radar-timer-pill" id="bot4-anchor-pill">—</span>
+                </div>
+              </div>
+
+              <div class="ladder-cols">
+                <div class="ladder-col">
+                  <div class="ladder-col-head buy" data-i18n="bot4BuyCol">BUY ↑ pre-trades above market</div>
+                  <div class="ladder-rows" id="bot4-buy-ladder"></div>
+                </div>
+                <div class="ladder-col">
+                  <div class="ladder-col-head sell" data-i18n="bot4SellCol">SELL ↓ pre-trades below market</div>
+                  <div class="ladder-rows" id="bot4-sell-ladder"></div>
+                </div>
+              </div>
+
+              <div class="bot-line" id="bot4-running-line">—</div>
+              <div class="bot-line" id="bot4-pos">—</div>
+              <div class="bot-line" id="bot4-last">—</div>
+            </div>
+          </div>
+        </section>
+
+
+
+        <!-- ================= BOT 6: PRE-TRADE ENTRY ================= -->
+        <section class="panel bot-panel" id="bot6-panel">
+          <div class="panel-head">
+            <h3>🎯 <span data-i18n="bot6Title">Auto Trading (Pre-Trade Entry)</span>
+              <span class="pill" id="bot6-symbol">XAUUSDm</span>
+              <span class="pill trend-pill" id="bot6-watch-pill">WATCH —</span>
+            </h3>
+            <span class="bot-chip stopped" id="bot6-chip">STOPPED</span>
+          </div>
+          <div class="bot-body">
+            <div class="bot-left">
+              <div class="bot-settings bot-settings-4">
+                <div class="bot-field">
+                  <label for="bot6-lot" data-i18n="botLot">Lot size</label>
+                  <input id="bot6-lot" type="number" step="0.01" min="0.01" value="0.01" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot6-distance" data-i18n="bot6Distance">Distance ($)</label>
+                  <input id="bot6-distance" type="number" step="0.1" min="0" value="1.0" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot6-tp" data-i18n="bot2TP">TP ($)</label>
+                  <input id="bot6-tp" type="number" step="0.1" min="0" value="0" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot6-sl" data-i18n="bot2SL">SL ($)</label>
+                  <input id="bot6-sl" type="number" step="0.1" min="0" value="0" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot6-pressure" data-i18n="bot6Pressure">Min Pressure (%)</label>
+                  <input id="bot6-pressure" type="number" step="1" min="0" max="99" value="60" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot6-side" data-i18n="bot6Side">Side</label>
+                  <select id="bot6-side">
+                    <option value="watch" data-i18n="bot6SideWatch">Watch (auto)</option>
+                    <option value="buy" data-i18n="bot6SideBuy">Buy only</option>
+                    <option value="sell" data-i18n="bot6SideSell">Sell only</option>
+                    <option value="both" data-i18n="bot6SideBoth">Both sides</option>
+                  </select>
+                </div>
+              </div>
+              <div class="bot-hint" data-i18n="bot6Hint">The pre-trade (pending order) is parked Distance ($) away from the live market price, in the direction the Market Pressure Watch allows. Watch NEUTRAL, or pressure below Min Pressure % → no trade. TP > 0 = fixed take profit, 0 = no TP. SL > 0 = fixed stop loss, SL = 0 → from $0.80 of profit the SL is set at 70% of the profit and follows it up, never back down.</div>
+
+              <div class="bot-market">
+                <div class="bot-market-head">
+                  <span class="bot-market-label"><span data-i18n="botSymbol">Market</span> <span class="all-market-tag" data-i18n="bot5AllMarket">ALL MARKET</span></span>
+                  <span id="bot6-symbol-name" class="bot-market-active">XAUUSDm</span>
+                </div>
+                <div class="bot-market-row">
+                  <div id="bot6-market-chips" class="chips bot-chips-side">
+                    <button type="button" class="chip active" data-sym="XAUUSDm">XAUUSDm</button>
+                    <button type="button" class="chip" data-sym="XAUUSD247m">XAUUSD247m</button>
+                    <button type="button" class="chip" data-sym="BTCUSDTm">BTCUSDTm</button>
+                    <button type="button" class="chip" data-sym="DXY">DXY</button>
+                    <button type="button" class="chip" data-sym="USOILm">Crude Oil</button>
+                    <button type="button" class="chip" data-sym="USDJPYm">USDJPYm</button>
+                    <button type="button" class="chip" data-sym="EURUSDm">EURUSDm</button>
+                    <button type="button" class="chip" data-sym="USTECm">USTECm</button>
+                  </div>
+                  <div class="bot-side-curve" id="bot6-curve-box"></div>
+                </div>
+              </div>
+
+              <div class="bot-actions">
+                <button id="bot6-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot6-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
+                <button id="bot6-watch-gate" class="btn bot-trend" title="Trade only in the direction the Market Pressure Watch dials show"><span data-i18n="bot6WatchGate">Watch Check</span>: <span id="bot6-watch-gate-status" class="trend-badge deactive">OFF</span></button>
+                <button id="bot6-ai-gate" class="btn bot-trend" title="The AI market-direction board (every news source) must not oppose the trade"><span data-i18n="bot6AiGate">AI Check</span>: <span id="bot6-ai-gate-status" class="trend-badge deactive">OFF</span></button>
+                <button id="bot6-close" class="btn ghost small" data-i18n="botClose">Close now</button>
+              </div>
+            </div>
+
+            <div class="bot-info">
+              <div class="pricemap" id="bot6-pricemap">
+                <div class="pricemap-head">
+                  <span class="pricemap-title"><span class="pricemap-live"></span><span data-i18n="priceMapTitle">Live Level Map</span></span>
+                  <span class="pricemap-price" id="bot6-map-price">—</span>
+                </div>
+                <div class="pricemap-rows" id="bot6-map-rows"></div>
+              </div>
+              <div class="radar-box-head">
+                <span class="bot-cond-title" data-i18n="bot6EntryTitle">🎯 Parked Pre-Trade</span>
+                <div class="radar-pills">
+                  <span class="radar-zone-pill" id="bot6-entry-pill">NO PRE-TRADE</span>
+                  <span class="radar-timer-pill" id="bot6-anchor-pill">—</span>
+                </div>
+              </div>
+              <div class="ladder-cols">
+                <div class="ladder-col">
+                  <div class="ladder-col-head buy" data-i18n="bot6WatchTitle">👁️ Market Pressure Watch</div>
+                  <div class="ladder-rows" id="bot6-watch-box"></div>
+                </div>
+                <div class="ladder-col">
+                  <div class="ladder-col-head sell" data-i18n="bot6RulesTitle">💰 TP / SL Rule In Force</div>
+                  <div class="ladder-rows" id="bot6-rules-box"></div>
+                </div>
+              </div>
+
+              <div class="bot-line" id="bot6-running-line">—</div>
+              <div class="bot-line" id="bot6-pos">—</div>
+              <div class="bot-line" id="bot6-last">—</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= BOT 7: REVERSAL CANDLE ================= -->
+        <section class="panel bot-panel" id="bot7-panel">
+          <div class="panel-head">
+            <h3>🔄 <span data-i18n="bot7Title">Auto Trading (Reversal Candle)</span>
+              <span class="pill" id="bot7-symbol">XAUUSDm</span>
+              <span class="pill trend-pill" id="bot7-candle-pill">—</span>
+            </h3>
+            <span class="bot-chip stopped" id="bot7-chip">STOPPED</span>
+          </div>
+          <div class="bot-body">
+            <div class="bot-left">
+              <div class="bot-settings bot-settings-4">
+                <div class="bot-field">
+                  <label for="bot7-lot" data-i18n="botLot">Lot size</label>
+                  <input id="bot7-lot" type="number" step="0.01" min="0.01" value="0.01" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot7-tf" data-i18n="bot2Timeframe">Timeframe</label>
+                  <select id="bot7-tf">
+                    <option value="M1">M1</option>
+                    <option value="M5">M5</option>
+                    <option value="M15">M15</option>
+                  </select>
+                </div>
+                <div class="bot-field">
+                  <label for="bot7-reverse" data-i18n="bot7Reverse">Reversal Distance ($)</label>
+                  <input id="bot7-reverse" type="number" step="0.1" min="0" value="0" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot7-tp" data-i18n="bot2TP">TP ($)</label>
+                  <input id="bot7-tp" type="number" step="0.1" min="0" value="0" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot7-sl" data-i18n="bot2SL">SL ($)</label>
+                  <input id="bot7-sl" type="number" step="0.1" min="0" value="0" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot7-pressure" data-i18n="bot6Pressure">Min Pressure (%)</label>
+                  <input id="bot7-pressure" type="number" step="1" min="0" max="99" value="60" />
+                </div>
+              </div>
+              <div class="bot-hint" data-i18n="bot7Hint">The bot reads the last closed candle and measures the reversal from the point the market turned from: the candle's close, which then follows the lowest low (bear candle) / highest high (bull candle) while the price keeps running that way - so a candle that drops, goes deeper and then suddenly snaps back still fires, from the real turning point. The moment the price travels back by the Reversal Distance ($) the trade is fired instantly in the new direction (bull candle breaks back down → SELL, bear candle breaks back up → BUY). Reversal Distance 0 = the candle's own body. Each closed candle can fire once. Turn level / trigger / left to fire are shown live in the radar. TP/SL follow the same rule as Bot 6 (SL 0 = 70% profit lock from $0.80).</div>
+
+              <div class="bot-market">
+                <div class="bot-market-head">
+                  <span class="bot-market-label"><span data-i18n="botSymbol">Market</span> <span class="all-market-tag" data-i18n="bot5AllMarket">ALL MARKET</span></span>
+                  <span id="bot7-symbol-name" class="bot-market-active">XAUUSDm</span>
+                </div>
+                <div class="bot-market-row">
+                  <div id="bot7-market-chips" class="chips bot-chips-side">
+                    <button type="button" class="chip active" data-sym="XAUUSDm">XAUUSDm</button>
+                    <button type="button" class="chip" data-sym="XAUUSD247m">XAUUSD247m</button>
+                    <button type="button" class="chip" data-sym="BTCUSDTm">BTCUSDTm</button>
+                    <button type="button" class="chip" data-sym="DXY">DXY</button>
+                    <button type="button" class="chip" data-sym="USOILm">Crude Oil</button>
+                    <button type="button" class="chip" data-sym="USDJPYm">USDJPYm</button>
+                    <button type="button" class="chip" data-sym="EURUSDm">EURUSDm</button>
+                    <button type="button" class="chip" data-sym="USTECm">USTECm</button>
+                  </div>
+                  <div class="bot-side-curve" id="bot7-curve-box"></div>
+                </div>
+              </div>
+
+              <div class="bot-actions">
+                <button id="bot7-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot7-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
+                <button id="bot7-watch-gate" class="btn bot-trend" title="Trade only in the direction the Market Pressure Watch dials show"><span data-i18n="bot6WatchGate">Watch Check</span>: <span id="bot7-watch-gate-status" class="trend-badge deactive">OFF</span></button>
+                <button id="bot7-ai-gate" class="btn bot-trend" title="The AI market-direction board (every news source) must not oppose the trade"><span data-i18n="bot6AiGate">AI Check</span>: <span id="bot7-ai-gate-status" class="trend-badge deactive">OFF</span></button>
+                <button id="bot7-close" class="btn ghost small" data-i18n="botClose">Close now</button>
+              </div>
+            </div>
+
+            <div class="bot-info">
+              <div class="pricemap" id="bot7-pricemap">
+                <div class="pricemap-head">
+                  <span class="pricemap-title"><span class="pricemap-live"></span><span data-i18n="priceMapTitle">Live Level Map</span></span>
+                  <span class="pricemap-price" id="bot7-map-price">—</span>
+                </div>
+                <div class="pricemap-rows" id="bot7-map-rows"></div>
+              </div>
+              <div class="radar-box-head">
+                <span class="bot-cond-title" data-i18n="bot7CandleTitle">🕯️ Candle Reversal Radar</span>
+                <div class="radar-pills">
+                  <span class="radar-zone-pill" id="bot7-trigger-pill">WAITING</span>
+                  <span class="radar-timer-pill" id="bot7-candle-time-pill">—</span>
+                </div>
+              </div>
+              <div class="ladder-cols">
+                <div class="ladder-col">
+                  <div class="ladder-col-head" data-i18n="bot7LastCandle">Last closed candle</div>
+                  <div class="ladder-rows" id="bot7-candle-box"></div>
+                </div>
+                <div class="ladder-col">
+                  <div class="ladder-col-head sell" data-i18n="bot6WatchTitle">👁️ Market Pressure Watch</div>
+                  <div class="ladder-rows" id="bot7-watch-box"></div>
+                </div>
+              </div>
+
+              <div class="bot-line" id="bot7-running-line">—</div>
+              <div class="bot-line" id="bot7-pos">—</div>
+              <div class="bot-line" id="bot7-last">—</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Bot 5: News Trader (control panel) -->
+        <section class="panel bot-panel" id="bot5-panel">
+          <div class="panel-head">
+            <h3>📰 <span data-i18n="bot5Title">Auto Trading (News Trader)</span>
+              <span class="pill" id="bot5-symbol">XAUUSDm</span>
+              <span class="pill" id="bot5-feed-pill">NEWS</span>
+            </h3>
+            <span class="bot-chip stopped" id="bot5-chip">STOPPED</span>
+          </div>
+          <div class="bot-body">
+            <div class="bot-left">
+              <div class="bot-settings bot-settings-4">
+                <div class="bot-field">
+                  <label for="bot5-lot" data-i18n="botLot">Lot size</label>
+                  <input id="bot5-lot" type="number" step="0.01" min="0.01" value="0.01" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot5-pre" data-i18n="bot5Pre">Pre minutes</label>
+                  <input id="bot5-pre" type="number" step="1" min="0" value="5" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot5-post" data-i18n="bot5Post">Post minutes</label>
+                  <input id="bot5-post" type="number" step="1" min="1" value="15" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot5-tp" data-i18n="bot2TP">TP ($)</label>
+                  <input id="bot5-tp" type="number" step="0.1" min="0" value="3.00" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot5-sl" data-i18n="bot2SL">SL ($)</label>
+                  <input id="bot5-sl" type="number" step="0.1" min="0" value="3.00" />
+                </div>
+                <div class="bot-field">
+                  <label for="bot5-mode" data-i18n="bot5Mode">Trading style</label>
+                  <select id="bot5-mode">
+                    <option value="anticipate" data-i18n="bot5ModeAnticipate">Anticipate</option>
+                    <option value="straddle" data-i18n="bot5ModeStraddle">Straddle</option>
+                    <option value="follow" data-i18n="bot5ModeFollow">Follow</option>
+                  </select>
+                </div>
+                <div class="bot-field">
+                  <label for="bot5-impact" data-i18n="bot5Impact">Min impact</label>
+                  <select id="bot5-impact">
+                    <option value="high" data-i18n="bot5ImpactHigh">High</option>
+                    <option value="medium" data-i18n="bot5ImpactMedium">Medium</option>
+                    <option value="all" data-i18n="bot5ImpactAll">All</option>
+                  </select>
+                </div>
+                <div class="bot-field">
+                  <label for="bot5-max-trades" data-i18n="bot2MaxTrades">Max Trades</label>
+                  <input id="bot5-max-trades" type="number" step="1" min="1" max="10" value="1" />
+                </div>
+              </div>
+              <div class="bot-hint" data-i18n="bot5Hint">The bot reads the economic calendar, tells you BUY or SELL and when to enter, then trades the news window: it opens Pre minutes before the release and closes Post minutes after it.</div>
+
+              <div class="bot-market">
+                <div class="bot-market-head">
+                  <span class="bot-market-label"><span data-i18n="botSymbol">Market</span> <span class="all-market-tag" data-i18n="bot5AllMarket">ALL MARKET</span></span>
+                  <span id="bot5-symbol-name" class="bot-market-active">XAUUSDm</span>
+                </div>
+                <div class="bot-market-row">
+                  <div id="bot5-market-chips" class="chips bot-chips-side">
+                    <button type="button" class="chip active" data-sym="XAUUSDm">XAUUSDm</button>
+                    <button type="button" class="chip" data-sym="BTCUSDTm">BTCUSDTm</button>
+                    <button type="button" class="chip" data-sym="EURUSDm">EURUSDm</button>
+                    <button type="button" class="chip" data-sym="USDJPYm">USDJPYm</button>
+                  </div>
+                  <div class="bot-side-curve" id="bot5-curve-box"></div>
+                </div>
+              </div>
+
+              <div class="bot-actions">
+                <button id="bot5-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot5-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
+                <button id="bot5-close" class="btn ghost small" data-i18n="botClose">Close now</button>
+              </div>
+            </div>
+
+            <div class="bot-info">
+              <div class="pricemap" id="bot5-pricemap">
+                <div class="pricemap-head">
+                  <span class="pricemap-title"><span class="pricemap-live"></span><span data-i18n="priceMapTitle">Live Level Map</span></span>
+                  <span class="pricemap-price" id="bot5-map-price">—</span>
+                </div>
+                <div class="pricemap-rows" id="bot5-map-rows"></div>
+              </div>
+
+              <!-- Next event card (mirrors the flow NEXT EVENT stage) -->
+              <div class="news-next-card" id="bot5-next-card" style="margin-top: 0;">
+                <div class="news-next-head">
+                  <span class="news-next-label" data-i18n="bot5NextEvent">Next event</span>
+                  <span class="news-countdown" id="bot5-countdown">—</span>
+                </div>
+                <div class="news-next-title" id="bot5-event-title" data-i18n="bot5NoNews">No upcoming high-impact event</div>
+                <div class="news-next-meta" id="bot5-event-meta">—</div>
+                <div class="news-bias-row">
+                  <span class="news-bias-pill" id="bot5-bias-pill">WAIT</span>
+                  <span class="news-predicted-move" id="bot5-predicted-move"></span>
+                  <span class="news-bias-reason" id="bot5-bias-reason">—</span>
+                </div>
+                <div class="news-impacted-block">
+                  <div class="news-impacted-title">🎯 IMPACTED MARKETS &amp; DIRECTION (BUY / SELL):</div>
+                  <div class="news-impacted-chips" id="bot5-next-impacted-chips"></div>
+                </div>
+                <div class="news-plan" id="bot5-plan">—</div>
+              </div>
+
+              <!-- AI direction board (every news source -> one verdict per market) -->
+              <div class="news-impacted-block">
+                <div class="news-impacted-title" data-i18n="bot5OutlookTitle">🤖 AI Market Direction · next day</div>
+                <div class="news-impacted-chips" id="bot5-outlook-chips"></div>
+              </div>
+
+              <div class="bot-line" id="bot5-running-line">—</div>
+              <div class="bot-line" id="bot5-pos">—</div>
+              <div class="bot-line" id="bot5-last">—</div>
+            </div>
+          </div>
+        </section>
+      </div> <!-- /view-bots -->
+
+      <!-- VIEW 2: ACTIVITY LOG (relocated to right drawer) -->
+      <div class="drawer-view" id="view-activity">
+        <section class="panel feed-panel feed-panel-drawer" id="feed-panel">
           <div class="panel-head feed-panel-head">
             <div class="feed-head-left">
-              <h3 data-i18n="activity">Activity</h3>
-              <span class="pill" id="feed-badge">0</span>
+              <h3>⚡ <span data-i18n="activity">Activity log</span></h3>
+              <span class="pill" id="feed-badge">0 events</span>
             </div>
             <div class="feed-head-actions">
-              <button type="button" class="btn-voice-toggle" id="voice-mute-btn" title="Toggle Activity Voice Alerts">
+              <button type="button" class="btn-voice-toggle" id="voice-mute-btn" title="Toggle audio alerts">
                 <span class="voice-icon" id="voice-icon">🔊</span>
-                <span class="voice-lbl" id="voice-lbl">Voice: ON</span>
+                <span class="voice-text" id="voice-lbl">Voice: ON</span>
               </button>
             </div>
           </div>
           <ul id="feed" class="feed"></ul>
-        </div>
-      </section>
+        </section>
+      </div>
+    </div> <!-- /bots-drawer-body -->
+  </aside>
 
-      <!-- history -->
-      <section class="panel">
-        <div class="panel-head wrap">
-          <h3><span data-i18n="tradeHistory">Trade history</span> <span class="pill" id="hist-count">0</span></h3>
-          <div class="filters">
-            <select id="hist-period" class="inp">
-              <option value="today" data-i18n="today">Today</option>
-              <option value="7" selected>7 days</option>
-              <option value="30">30 days</option>
-              <option value="90">90 days</option>
-              <option value="all" data-i18n="allTime">All time</option>
-            </select>
-            <select id="hist-result" class="inp">
-              <option value="all" data-i18n="allResults">All results</option>
-              <option value="win" data-i18n="winsOnly">Wins only</option>
-              <option value="loss" data-i18n="lossesOnly">Losses only</option>
-            </select>
-            <input id="hist-symbol" class="inp" list="symbol-list" placeholder="Symbol" style="width:120px" />
-            <datalist id="symbol-list"></datalist>
-            <input id="hist-search" class="inp" placeholder="Search comment / ticket" style="width:170px" />
-            <button id="hist-csv" class="btn small ghost" data-i18n="exportCsv">Export CSV</button>
-          </div>
-        </div>
-        <div class="table-scroll tall">
-          <table class="tbl">
-            <thead>
-              <tr>
-                <th id="th-close" class="sortable" data-i18n="closeTime">Close time</th>
-                <th data-i18n="symbol">Symbol</th>
-                <th data-i18n="side">Side</th>
-                <th data-i18n="lots">Lots</th>
-                <th data-i18n="openPrice">Open</th>
-                <th data-i18n="closePrice">Close</th>
-                <th data-i18n="commission">Comm.</th>
-                <th data-i18n="swap">Swap</th>
-                <th class="num" data-i18n="netPL">Net P/L</th>
-                <th data-i18n="magic">Magic</th>
-                <th data-i18n="comment">Comment</th>
-                <th data-i18n="duration">Duration</th>
-              </tr>
-            </thead>
-            <tbody id="history-body"></tbody>
-          </table>
-          <div id="hist-empty" class="empty" data-i18n="noHistory">No closed trades in this range yet.</div>
-        </div>
-        <div class="panel-foot">
-          <button id="hist-more" class="btn small ghost hidden" data-i18n="loadMore">Load more</button>
-          <span class="muted" id="hist-foot"></span>
-        </div>
-      </section>
     </main>
 
     <footer class="footer">
@@ -757,7 +1798,9 @@
 
   <div id="toasts" class="toasts"></div>
 
-  <script src="/static/app.js?v=20261002_0035"></script>
+  <script src="/static/softradex-terminal.js?v=20261019_sx1"></script>
+  <script src="/static/app.js?v=20261018_wireact"></script>
+  <script src="/static/traders-terminal.js?v=20261018_v1"></script>
 </body>
 
 </html>

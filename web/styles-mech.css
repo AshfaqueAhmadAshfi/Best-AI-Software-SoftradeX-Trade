@@ -1,0 +1,510 @@
+/* ============================================================
+   styles-mech.css — "MECH-OS · industrial machine" layer
+   Loaded AFTER styles.css + styles-premium.css + styles-ultra.css.
+   Whole-dashboard re-skin: gunmetal steel plates, hazard amber,
+   monospace readouts, bevels, rivets & scanlines.
+   Only re-skins visuals — no layout, ids, classes or JS change.
+   ============================================================ */
+
+/* ------------------------------------------------------------------ tokens */
+:root {
+  /* gunmetal surfaces */
+  --bg: #0a0d12;
+  --bg-soft: #0c1016;
+  --bg-elevated: #12161e;
+  --panel: #11161e;
+  --panel-2: #161c26;
+  --panel-solid: #11161e;
+  --glass: rgba(255, 255, 255, 0.022);
+  --glass-strong: rgba(255, 255, 255, 0.04);
+
+  /* steel lines */
+  --line: rgba(122, 145, 180, 0.18);
+  --line-soft: rgba(122, 145, 180, 0.10);
+  --line-bright: rgba(160, 185, 220, 0.34);
+
+  /* type */
+  --txt: #d7deea;
+  --txt-dim: #97a3b5;
+  --txt-faint: #5f6c7e;
+  --txt-muted: #7d8a9d;
+
+  /* hazard amber — the machine's warning-label colour */
+  --accent: #ffb020;
+  --accent-neon: #ffc94d;
+  --accent-dim: rgba(255, 176, 32, 0.13);
+
+  /* lamps */
+  --win: #58e07c;
+  --win-neon: #58e07c;
+  --win-soft: rgba(88, 224, 124, 0.10);
+  --loss: #ff6b5e;
+  --loss-neon: #ff6b5e;
+  --loss-soft: rgba(255, 107, 94, 0.10);
+  --ok: #58e07c;
+  --warn: #ffb020;
+  --gold: #ffc94d;
+  --gold-glow: rgba(255, 176, 32, 0.20);
+
+  /* sharp machine geometry */
+  --radius: 3px;
+  --radius-sm: 2px;
+  --radius-xs: 2px;
+
+  /* hard shadows, no soft glow */
+  --shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 14px 30px -20px rgba(0, 0, 0, 0.9);
+  --shadow-3d: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 0 rgba(0, 0, 0, 0.55);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 0 rgba(0, 0, 0, 0.5), 0 14px 30px -22px rgba(0, 0, 0, 0.9);
+  --shadow-glow: 0 0 0 1px rgba(255, 176, 32, 0.35);
+  --shadow-win: 0 0 0 1px rgba(88, 224, 124, 0.35);
+  --shadow-loss: 0 0 0 1px rgba(255, 107, 94, 0.35);
+
+  /* fonts — mono first (Bengali falls back to Hind Siliguri) */
+  --font: var(--font-main);
+  --font-main: "JetBrains Mono", "Consolas", "Hind Siliguri", "Segoe UI", system-ui, sans-serif;
+  --font-display: "JetBrains Mono", "Space Grotesk", "Consolas", "Hind Siliguri", sans-serif;
+  --font-bengali: "Hind Siliguri", "Noto Sans Bengali", sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  /* machine palette helpers */
+  --steel-hi: rgba(255, 255, 255, 0.06);
+  --steel-edge: #2b3548;
+  --steel-dark: #07090d;
+}
+
+/* ------------------------------------------------------------ body · plate */
+body {
+  background: #0a0d12 !important;
+  background-color: #0a0d12 !important;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(122, 145, 180, 0.05) 0 1px, transparent 1px 56px),
+    repeating-linear-gradient(90deg, rgba(122, 145, 180, 0.05) 0 1px, transparent 1px 56px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px),
+    radial-gradient(1100px 420px at 50% -10%, rgba(255, 176, 32, 0.06), transparent 60%),
+    radial-gradient(1500px 950px at 50% 48%, transparent 52%, rgba(0, 0, 0, 0.55) 100%) !important;
+  font-family: var(--font-main);
+}
+::selection { background: rgba(255, 176, 32, 0.38) !important; color: #fff !important; }
+
+/* steel scrollbars */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0a0d12; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #2b3548, #171d28);
+  border: 2px solid #0a0d12; border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover { background: #ffb020; }
+* { scrollbar-color: #2b3548 #0a0d12; scrollbar-width: thin; }
+
+/* ------------------------------------------------------------------ topbar */
+.topbar {
+  background: linear-gradient(180deg, #171d28, #0f131b) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  border-bottom: 1px solid #2b3548 !important;
+  box-shadow: 0 1px 0 rgba(255, 176, 32, 0.35), 0 14px 30px -20px rgba(0, 0, 0, 0.9) !important;
+}
+.brand-mark {
+  background: linear-gradient(180deg, #1b212c, #0e1218) !important;
+  border: 1px solid #3a4557 !important;
+  border-radius: 3px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  padding: 4px !important;
+}
+.brand-mark .logo, .brand-mark img { border-radius: 2px !important; }
+.brand-text strong {
+  color: #ffd870 !important;
+  -webkit-text-fill-color: #ffd870 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.14em !important;
+  text-shadow: none !important;
+}
+.brand-text span {
+  font-family: var(--mono);
+  font-size: 9.5px !important;
+  letter-spacing: 0.2em !important;
+  text-transform: uppercase;
+  color: var(--txt-faint) !important;
+}
+.clock {
+  background: linear-gradient(180deg, #12161e, #0c0f15) !important;
+  border: 1px solid #2b3548 !important;
+  border-radius: 3px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+.clock-value { color: #57c8f0 !important; font-family: var(--mono); letter-spacing: 0.06em; }
+.clock-label { color: #ffb020 !important; letter-spacing: 0.16em !important; text-transform: uppercase; }
+.badge {
+  border-radius: 2px !important;
+  border: 1px solid #3a4557 !important;
+  background: linear-gradient(180deg, #1a212c, #10141c) !important;
+  color: var(--txt-dim) !important;
+  font-family: var(--mono);
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase;
+}
+.badge-live { color: #58e07c !important; border-color: rgba(88, 224, 124, 0.4) !important; }
+.badge-demo { color: #ffc94d !important; border-color: rgba(255, 201, 77, 0.4) !important; }
+.badge-ea { color: #57c8f0 !important; border-color: rgba(87, 200, 240, 0.4) !important; }
+
+/* ---------------------------------------------------------- account strip */
+.account-strip {
+  background: linear-gradient(180deg, #12161e, #0b0e14) !important;
+  border: 1px solid #2b3548 !important;
+  border-radius: 3px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 0 rgba(0, 0, 0, 0.5) !important;
+}
+.account-strip .acc-item {
+  background: transparent !important;
+  border: none !important;
+  border-right: 1px solid #232c3a !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+.account-strip .acc-item:last-child { border-right: none !important; }
+.account-strip .acc-item::before { display: none !important; }
+.acc-item .acc-label {
+  color: #ffb020 !important;
+  letter-spacing: 0.12em !important;
+  font-family: var(--mono);
+}
+.acc-item .acc-value { color: #d7deea !important; font-family: var(--mono); }
+.acc-item.highlight .acc-value { color: #57c8f0 !important; text-shadow: none !important; }
+
+/* ------------------------------------------------- panels · steel plates */
+.panel, .card, .stat-card, .watch-card, .struct-card, .feed li,
+.conn-widget, .clock, .machine-card, .lr-card,
+.ai-board, .sessions-board, .news-outlook, .news-next-card,
+.planned-trades-card-wrap, .connect-card {
+  background: linear-gradient(180deg, #141a24, #0d1117) !important;
+  border: 1px solid #262f3f !important;
+  border-radius: 3px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 0 rgba(0, 0, 0, 0.5), 0 14px 30px -22px rgba(0, 0, 0, 0.9) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.panel:hover, .card:hover, .watch-card:hover, .struct-card:hover {
+  border-color: rgba(255, 176, 32, 0.35) !important;
+}
+.panel::before, .card::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 176, 32, 0.5), transparent) !important;
+  opacity: 0.8 !important;
+}
+
+/* dialog = steel crate */
+.modal { background: rgba(4, 6, 10, 0.72) !important; backdrop-filter: none !important; }
+.modal-card {
+  background: linear-gradient(180deg, #171d28, #0d1117) !important;
+  border: 1px solid #3a4557 !important;
+  border-radius: 3px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 24px 60px -20px rgba(0, 0, 0, 0.95) !important;
+}
+.modal-card h3 {
+  font-family: var(--mono) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.12em !important;
+  color: #ffd870 !important;
+  border-bottom: 1px solid #2b3548;
+  padding-bottom: 10px;
+}
+
+/* ------------------------------------------------- step headers · labels */
+.flow-step-num {
+  background: linear-gradient(180deg, #ffd870, #e08900) !important;
+  color: #14100a !important;
+  border-radius: 2px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 1px 0 rgba(0, 0, 0, 0.6) !important;
+  letter-spacing: 0.1em !important;
+}
+.flow-step-name { color: #cfd8e6 !important; letter-spacing: 0.18em !important; }
+.flow-step-live { color: #58e07c !important; letter-spacing: 0.2em !important; }
+
+/* ------------------------------------------------------------ flow wires */
+/* wider gutters so every wire + chip runs INSIDE the gaps between the
+   panels — nothing cuts across the middle anymore (desktop only; phones
+   stack the stages and hide the wires) */
+@media (min-width: 720px) {
+  body.wires-on .flow { gap: 22px !important; }
+}
+body.wires-on .flow-link .flow-track {
+  stroke: #232c3a !important;
+  stroke-width: 1.5 !important;
+}
+body.wires-on .flow-link .flow-pulse {
+  stroke: #ffb020 !important;
+  stroke-width: 2 !important;
+  filter: drop-shadow(0 0 3px rgba(255, 176, 32, 0.45)) !important;
+}
+body.wires-on .flow-link .flow-arrow {
+  stroke: #ffb020 !important;
+  fill: #ffb020 !important;
+  filter: drop-shadow(0 0 3px rgba(255, 176, 32, 0.4)) !important;
+}
+body.wires-on .flow-link .flow-tag {
+  background: linear-gradient(180deg, #1a212c, #10141c) !important;
+  border: 1px solid #3a4557 !important;
+  border-radius: 2px !important;
+  color: #ffb020 !important;
+  font-size: 7.5px !important;
+  padding: 2px 6px !important;
+}
+body.wires-on .flow-link .flow-tag b {
+  color: #ffd870 !important;
+  letter-spacing: 0.08em !important;
+  max-width: 110px !important;
+}
+body.wires-on .flow-link .flow-tag i {
+  background: #ffb020 !important;
+  box-shadow: 0 0 6px rgba(255, 176, 32, 0.8) !important;
+}
+/* short column-gutter hops: the chip stands on its side (vseg, set by
+   app.js) so it fits the gutter instead of spilling over the panels */
+body.wires-on .flow-link .flow-tag.vseg {
+  writing-mode: vertical-rl !important;
+  text-orientation: mixed !important;
+}
+body.wires-on .flow-link .flow-tag.vseg b {
+  max-width: none !important;
+  max-height: 128px !important;
+}
+
+/* --------------------------------------------------------------- buttons */
+.btn {
+  border-radius: 2px !important;
+  font-family: var(--mono) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  background: linear-gradient(180deg, #222a36, #12171f) !important;
+  border: 1px solid #3a4557 !important;
+  color: #d7deea !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 2px 0 #07090d !important;
+}
+.btn:hover {
+  transform: none !important;
+  border-color: #ffb020 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 14px rgba(255, 176, 32, 0.22) !important;
+}
+.btn:active { box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6) !important; transform: translateY(1px) !important; }
+.btn.primary {
+  background: linear-gradient(180deg, #ffca57, #e08900) !important;
+  border-color: #ffd870 !important;
+  color: #14100a !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 0 #7a4c00 !important;
+  text-shadow: none !important;
+}
+.btn.primary:hover {
+  background: linear-gradient(180deg, #ffe08a, #f0a30e) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 18px rgba(255, 176, 32, 0.45) !important;
+}
+.btn.danger {
+  background: linear-gradient(180deg, #3a1518, #200b0e) !important;
+  border-color: #7f2a2a !important;
+  color: #ff9c9c !important;
+}
+.btn.danger:hover {
+  border-color: #ff6b5e !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 14px rgba(255, 107, 94, 0.3) !important;
+}
+.btn.ghost { background: transparent !important; }
+.btn-icon-xs { border-radius: 2px !important; border-color: #3a4557 !important; }
+.btn-voice-toggle, .btn-planned-recalc {
+  border-radius: 2px !important;
+  border-color: #3a4557 !important;
+  background: linear-gradient(180deg, #1a212c, #10141c) !important;
+  font-family: var(--mono) !important;
+}
+.bot-start { border-color: rgba(88, 224, 124, 0.5) !important; }
+.bot-stop { border-color: rgba(255, 107, 94, 0.5) !important; }
+
+/* ------------------------------------------------- chips · tabs · toggles */
+.chip, .b-nav-pill, .b-tf-btn, .b-side-tab, .mh-chip, .news-impact-btn,
+.ai-tf-tabs .chip, .struct-tf-toggle .chip {
+  border-radius: 2px !important;
+  border: 1px solid #2b3548 !important;
+  background: linear-gradient(180deg, #161c26, #0e1218) !important;
+  color: var(--txt-dim) !important;
+  font-family: var(--mono) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+.chip:hover, .b-nav-pill:hover, .b-tf-btn:hover, .mh-chip:hover,
+.news-impact-btn:hover, .b-side-tab:hover {
+  border-color: rgba(255, 176, 32, 0.45) !important;
+  color: #ffd870 !important;
+}
+.chip.active, .b-nav-pill.active, .b-tf-btn.active, .mh-chip.on,
+.b-side-tab.active, .news-impact-btn.active {
+  background: linear-gradient(180deg, #ffd870, #e08900) !important;
+  border-color: #ffd870 !important;
+  color: #14100a !important;
+  font-weight: 800 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 2px 0 #7a4c00 !important;
+}
+.news-impact-btn.active.imp-filter-low { background: linear-gradient(180deg, #86efac, #22c55e) !important; border-color: #86efac !important; color: #052e16 !important; }
+.news-impact-btn.active.imp-filter-medium { background: linear-gradient(180deg, #fcd34d, #f59e0b) !important; border-color: #fcd34d !important; color: #451a03 !important; }
+.news-impact-btn.active.imp-filter-high { background: linear-gradient(180deg, #fca5a5, #ef4444) !important; border-color: #fca5a5 !important; color: #450a0a !important; }
+
+/* ------------------------------------------------------- forms · fields */
+input, select, textarea {
+  background: #0b0f16 !important;
+  border: 1px solid #2b3548 !important;
+  border-radius: 2px !important;
+  color: #d7deea !important;
+  font-family: var(--mono) !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5) !important;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none !important;
+  border-color: #ffb020 !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(255, 176, 32, 0.18) !important;
+}
+.field label, .bot-field label, .bot-cond-title {
+  color: #ffb020 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+  font-family: var(--mono);
+  font-size: 10px !important;
+}
+.check input[type="checkbox"] { accent-color: #ffb020; box-shadow: none !important; }
+.mh-select-wrap select { border: 1px solid #2b3548 !important; border-radius: 2px !important; }
+
+/* ---------------------------------------------------------- lists · rows */
+.feed li, .news-filtered-item, .pt-card {
+  border-color: #1d2532 !important;
+  border-radius: 2px !important;
+}
+.feed li:nth-child(even), .news-filtered-item:nth-child(even) { background: rgba(255, 255, 255, 0.015) !important; }
+.feed li:hover, .news-filtered-item:hover { background: rgba(255, 176, 32, 0.05) !important; }
+.news-filtered-item .nfi-cur {
+  background: #1a212c !important;
+  border: 1px solid #2b3548 !important;
+  border-radius: 2px !important;
+  color: #ffd870 !important;
+  font-family: var(--mono);
+}
+.bot-line, .acc-value, .sess-count, .sess-window { font-family: var(--mono) !important; }
+
+/* --------------------------------------------------------------- tables */
+table { border-collapse: collapse; }
+th {
+  background: #11161e !important;
+  color: #ffb020 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+  font-family: var(--mono);
+  border-bottom: 1px solid #2b3548 !important;
+}
+tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.016); }
+tbody tr:hover { background: rgba(255, 176, 32, 0.05); }
+td { border-bottom: 1px solid rgba(122, 145, 180, 0.08); font-family: var(--mono); }
+
+/* ---------------------------------------------------- news · bias lamps */
+.news-bias-pill {
+  border-radius: 2px !important;
+  font-family: var(--mono) !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  border: 1px solid #2b3548 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+.news-bias-pill.buy { border-color: rgba(88, 224, 124, 0.5) !important; }
+.news-bias-pill.sell { border-color: rgba(255, 107, 94, 0.5) !important; }
+.news-countdown {
+  border-radius: 2px !important;
+  font-family: var(--mono) !important;
+  border: 1px solid rgba(255, 176, 32, 0.4) !important;
+  color: #ffd870 !important;
+}
+.news-impact-chip { border-radius: 2px !important; font-family: var(--mono) !important; }
+.news-outlook-title { color: #ffd870 !important; letter-spacing: 0.06em; }
+.news-impacted-title { color: #ffb020 !important; letter-spacing: 0.08em; }
+.news-next-label, .news-plan, .bot-hint, .flow-step-hint { font-family: var(--mono); }
+
+/* outlook verdict pills = stamped steel tags */
+.outlook-pill {
+  border-radius: 2px !important;
+  border: 1px solid #2b3548 !important;
+  background: linear-gradient(180deg, #161c26, #0e1218) !important;
+  font-family: var(--mono) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+.outlook-pill.buy { border-color: rgba(88, 224, 124, 0.45) !important; }
+.outlook-pill.sell { border-color: rgba(255, 107, 94, 0.45) !important; }
+.outlook-pill.mixed { border-color: rgba(255, 201, 77, 0.4) !important; }
+.outlook-pill b { color: #ffd870 !important; letter-spacing: 0.04em; }
+.outlook-empty { color: #ffb020 !important; font-family: var(--mono); }
+
+/* -------------------------------------------------------- sessions board */
+.sess-count { color: #57c8f0 !important; }
+.ses-open, .sess-badge.open { border-color: rgba(88, 224, 124, 0.5) !important; }
+
+/* ------------------------------------------------------------- ai board */
+.ai-head, .ai-title { color: #ffd870 !important; letter-spacing: 0.06em; }
+.ai-row {
+  border: 1px solid #1d2532 !important;
+  border-radius: 2px !important;
+  background: linear-gradient(180deg, #12161e, #0c0f15) !important;
+}
+.ai-row-up { color: #58e07c !important; }
+.ai-row-down { color: #ff6b5e !important; }
+.pt-rank-badge.rank-1 { background: linear-gradient(180deg, #ffd870, #e08900) !important; color: #14100a !important; border-radius: 2px !important; }
+.pt-rank-badge.rank-2 { background: linear-gradient(180deg, #57c8f0, #1e7ea8) !important; color: #04141c !important; border-radius: 2px !important; }
+.pt-badge { border-radius: 2px !important; font-family: var(--mono) !important; }
+#stage-setups .pt-card.buy .pt-badge { border-color: rgba(88, 224, 124, 0.45) !important; }
+#stage-setups .pt-card.sell .pt-badge { border-color: rgba(255, 107, 94, 0.45) !important; }
+
+/* -------------------------------------------------------- trade flow bar */
+.flow-balance { border: 1px solid #2b3548; border-radius: 4px; background: linear-gradient(180deg, #12161e, #0c0f15); }
+.market-hero .flow-balance { border: 1px solid rgba(56, 189, 248, 0.22) !important; border-radius: 8px !important; background: rgba(7, 10, 18, 0.92) !important; }
+.fb-title { color: #ffb020 !important; letter-spacing: 0.1em; }
+#stage-dial .machine-off-badge { border: 1px solid #3a4557 !important; border-radius: 2px !important; }
+
+/* --------------------------------------------------------- connect · login */
+.connect-brand-header, .login-market-header {
+  border-bottom: 1px solid #2b3548 !important;
+}
+.login-market-title, .all-news-main-title { color: #ffd870 !important; letter-spacing: 0.1em; }
+.login-stream-badge { border-radius: 2px !important; border-color: rgba(88, 224, 124, 0.4) !important; }
+.login-ticker-track { font-family: var(--mono); }
+
+/* --------------------------------------------------------- softradex terminal */
+.softradex-term-topbar, .binance-term-topbar, .b-side-header { border-bottom: 1px solid #2b3548 !important; }
+.b-lbl { color: #ffb020 !important; letter-spacing: 0.08em; }
+.b-val, .b-mid-price, .b-sym { font-family: var(--mono) !important; }
+.b-depth-bids .b-depth-row { background: rgba(88, 224, 124, 0.06) !important; }
+.b-depth-asks .b-depth-row { background: rgba(255, 107, 94, 0.06) !important; }
+
+/* -------------------------------------------------------------- bot chips */
+.bot-chip { border: 1px solid #2b3548 !important; border-radius: 2px !important; background: linear-gradient(180deg, #161c26, #0e1218) !important; }
+.bot-chip.stopped { border-color: rgba(255, 107, 94, 0.4) !important; }
+.bots-quick-nav { border-bottom: 1px solid #1d2532; }
+
+/* --------------------------------------------------------------- utility */
+.error-box {
+  border: 1px solid rgba(255, 107, 94, 0.5) !important;
+  border-radius: 2px !important;
+  background: linear-gradient(180deg, #2a1215, #180a0c) !important;
+  color: #ff9c9c !important;
+  font-family: var(--mono);
+}
+.progress {
+  border: 1px solid #2b3548 !important;
+  border-radius: 2px !important;
+  background: #0b0f16 !important;
+}
+.progress span { background: linear-gradient(180deg, #ffca57, #e08900) !important; }
+details summary {
+  color: #ffb020 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.footer {
+  border-top: 1px solid #1d2532;
+  color: var(--txt-faint) !important;
+  font-family: var(--mono) !important;
+  letter-spacing: 0.06em;
+}
+.mt5-status, .bot-info { font-family: var(--mono); }

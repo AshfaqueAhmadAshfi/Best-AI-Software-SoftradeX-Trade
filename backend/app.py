@@ -31,9 +31,56 @@ else:
     from .market_watch import get_all_market_watches
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+
+if sys.platform == "win32":
+    # Prevent Windows ProactorEventLoop ConnectionResetError [WinError 10054] crash on browser tab close/reload
+    try:
+        from asyncio.proactor_events import _ProactorBasePipeTransport
+
+        _orig_call_conn_lost = _ProactorBasePipeTransport._call_connection_lost
+
+        def _patched_call_conn_lost(self, exc):
+            try:
+                _orig_call_conn_lost(self, exc)
+            except (ConnectionResetError, BrokenPipeError):
+                pass
+            except OSError as e:
+                if getattr(e, "winerror", None) == 10054:
+                    pass
+                else:
+                    raise
+
+        _ProactorBasePipeTransport._call_connection_lost = _patched_call_conn_lost
+    except Exception:
+        pass
+
+# Prevent websockets legacy protocol AssertionError in _drain_helper during concurrent close/write
+try:
+    import websockets.legacy.protocol as _ws_proto
+
+    _orig_drain_helper = _ws_proto.WebSocketCommonProtocol._drain_helper
+
+    async def _patched_drain_helper(self):
+        if self.connection_lost_waiter.done():
+            raise ConnectionResetError("Connection lost")
+        if not self._paused:
+            return
+        waiter = self._drain_waiter
+        if waiter is not None and not waiter.cancelled() and not waiter.done():
+            try:
+                await waiter
+            except Exception:
+                pass
+            return
+        waiter = self.loop.create_future()
+        self._drain_waiter = waiter
+        await waiter
+
+    _ws_proto.WebSocketCommonProtocol._drain_helper = _patched_drain_helper
+except Exception:
+    pass
 
 store = Store(cfg.DB_FILE)
 
@@ -45,6 +92,8 @@ class Hub:
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.clients: set[WebSocket] = set()
         self._locks: dict[WebSocket, asyncio.Lock] = {}
+        self._pending_state: dict[WebSocket, Dict[str, Any]] = {}
+        self._in_flight: set[WebSocket] = set()
         self._last: Optional[Dict[str, Any]] = None
         self._last_watch: Optional[Dict[str, Any]] = None
 
@@ -69,16 +118,29 @@ class Hub:
     def unregister(self, ws: WebSocket) -> None:
         self.clients.discard(ws)
         self._locks.pop(ws, None)
+        self._pending_state.pop(ws, None)
+        self._in_flight.discard(ws)
 
     async def _send_safe(self, ws: WebSocket, msg: Dict[str, Any]) -> None:
+        if ws not in self.clients:
+            self._in_flight.discard(ws)
+            return
         lock = self._locks.get(ws)
         if not lock:
+            self._in_flight.discard(ws)
             return
         try:
             async with lock:
-                await ws.send_json(msg)
+                if ws in self.clients:
+                    await ws.send_json(msg)
+                while ws in self.clients and ws in self._pending_state:
+                    pending = self._pending_state.pop(ws, None)
+                    if pending and ws in self.clients:
+                        await ws.send_json(pending)
         except Exception:
             self.unregister(ws)
+        finally:
+            self._in_flight.discard(ws)
 
     # called from the engine thread
     def publish(self, payload: Dict[str, Any], force: bool = False) -> None:
@@ -106,7 +168,19 @@ class Hub:
     def _broadcast(self, msg: Dict[str, Any]) -> None:
         if not self.clients:
             return
+        mtype = msg.get("type")
         for ws in list(self.clients):
+            if ws not in self.clients:
+                continue
+            if ws in self._in_flight:
+                # If socket is busy sending, drop high-frequency watch frames
+                if mtype == "watch":
+                    continue
+                # If state snapshot arrives, buffer only the latest state
+                if mtype == "state":
+                    self._pending_state[ws] = msg
+                continue
+            self._in_flight.add(ws)
             asyncio.create_task(self._send_safe(ws, msg))
 
     def push_event(self, kind: str, message: str) -> None:
@@ -117,6 +191,7 @@ class Hub:
             self.loop.call_soon_threadsafe(self._broadcast, msg)
         except Exception:
             pass
+
 
 
 hub = Hub()
@@ -145,13 +220,11 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title=cfg.APP_NAME, version=cfg.VERSION, docs_url="/api/docs",
               redoc_url=None, lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware on purpose: the dashboard is served by this same server
+# (same-origin) and the EA is a non-browser client, so nothing legitimate needs
+# cross-origin access. Without it, a browser sandbox blocks every cross-origin
+# read of the local API - an open web page can no longer probe /api/* or drive
+# the live account.
 
 
 @app.middleware("http")
@@ -166,12 +239,13 @@ async def add_no_cache_headers(request: Request, call_next):
 
 @app.get("/api/config")
 async def api_config() -> Dict[str, Any]:
-    terminals = find_terminals()
+    # the lookup can hit a (rate-limited) full drive scan - keep it off the
+    # event loop so the dashboard never stalls while it runs
+    terminals = await asyncio.to_thread(find_terminals)
     exness_terminals = [p for p in terminals if "exness" in p.lower()]
     return {
         "app": cfg.APP_NAME,
         "version": cfg.VERSION,
-        "ea_secret": cfg.CONFIG.get("ea_secret", ""),
         "terminal_path": cfg.CONFIG.get("terminal_path", ""),
         "terminals": terminals,
         "exness_terminals": exness_terminals,
@@ -191,6 +265,17 @@ async def api_config() -> Dict[str, Any]:
         "common_servers": cfg.server_list(),
         "known_servers": cfg.known_servers(),
     }
+
+
+@app.post("/api/ea-token")
+async def api_ea_token() -> Dict[str, Any]:
+    """EA bridge token for the DashboardBridge inputs.
+
+    POST-only on purpose: a cross-origin page cannot send a JSON body without a
+    preflight (there is no CORS middleware), so the token cannot be skimmed by
+    drive-by scripts the way it could from a plain GET.
+    """
+    return {"ea_secret": cfg.CONFIG.get("ea_secret", "")}
 
 
 @app.get("/api/state")
@@ -217,7 +302,8 @@ async def api_market_watch(force: bool = False) -> Dict[str, Any]:
     snapshot every engine tick; this endpoint is only a one-shot seed / manual
     refresh path (force=1 recomputes immediately).
     """
-    return await asyncio.to_thread(get_all_market_watches, None, force)
+    extra = engine._flow_market_list() if hasattr(engine, "_flow_market_list") else []
+    return await asyncio.to_thread(get_all_market_watches, None, force, extra)
 
 
 # ------------------------------------------------------------------ account
@@ -255,7 +341,7 @@ async def api_settings(payload: Dict[str, Any] = Body(default={})) -> Dict[str, 
     return await asyncio.to_thread(engine.submit, "settings", allowed, 20.0)
 
 
-# ------------------------------------------------------------------ history
+# ---------------------------------------------------------------- history
 @app.get("/api/history")
 async def api_history(
     days: int = Query(0, ge=0, le=3650),
@@ -265,7 +351,7 @@ async def api_history(
     result: Optional[str] = Query(None, pattern="^(win|loss)$"),
     limit: int = Query(500, ge=1, le=20000),
     offset: int = Query(0, ge=0),
-    order: str = Query("DESC", pattern="^(?i)(asc|desc)$"),
+    order: str = Query("DESC", pattern="^(?i:asc|desc)$"),
     all_accounts: bool = False,
 ) -> Dict[str, Any]:
     """Closed trades of the account that is currently logged in."""
@@ -287,18 +373,21 @@ async def api_history(
 @app.get("/api/export.csv")
 async def api_export(days: int = 90, symbol: Optional[str] = None) -> PlainTextResponse:
     acc = current_account_key()
-    since_ts = int(time.time() - days * 86400) if days else None
-    rows = await asyncio.to_thread(store.get_trades, since_ts, None, symbol, None, 100000, 0, "DESC", acc or None)
     buf = io.StringIO()
     cols = ["close_time", "symbol", "side", "volume", "open_price", "close_price",
             "profit", "commission", "swap", "net_profit", "magic", "comment", "source", "position_id"]
     w = csv.writer(buf)
     w.writerow(["close_time_utc", *cols[1:]])
-    for r in rows:
-        ts = int(r.get("close_time") or 0)
-        row = [time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ts)) if ts else ""]
-        row += [r.get(c) for c in cols[1:]]
-        w.writerow(row)
+    if acc:
+        # same scoping rule as /api/history: logged-out exports stay empty,
+        # never "every account in the database"
+        since_ts = int(time.time() - days * 86400) if days else None
+        rows = await asyncio.to_thread(store.get_trades, since_ts, None, symbol, None, 100000, 0, "DESC", acc)
+        for r in rows:
+            ts = int(r.get("close_time") or 0)
+            row = [time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ts)) if ts else ""]
+            row += [r.get(c) for c in cols[1:]]
+            w.writerow(row)
     return PlainTextResponse(
         buf.getvalue(),
         media_type="text/csv",
@@ -345,7 +434,7 @@ async def api_bot_stop() -> Dict[str, Any]:
 async def api_bot_config(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
     allowed = {k: v for k, v in payload.items()
                if k in ("lot", "distance", "sl_distance", "lock_trigger", "lock_amount", "trail_start",
-                        "symbol", "max_spread", "cooldown_sec", "slippage_points")}
+                        "trail_pct", "symbol", "max_spread", "cooldown_sec", "slippage_points")}
     return await asyncio.to_thread(engine.submit, "bot_config", allowed, 30.0)
 
 
@@ -367,7 +456,7 @@ async def api_bot2() -> Dict[str, Any]:
 async def api_bot2_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
     """Green: bot 2 starts candle momentum & structure auto trading."""
     patch: Dict[str, Any] = {"running": True}
-    for k in ("lot", "max_trades", "tp", "sl", "symbol", "timeframe", "magic", "cooldown_sec", "slippage_points", "trend_mode", "trend_check_interval", "block_start_sec", "block_end_sec", "block_mid_from", "block_mid_to"):
+    for k in ("lot", "max_trades", "tp", "sl", "symbol", "timeframe", "magic", "cooldown_sec", "slippage_points", "trend_mode", "watch_enabled", "watch_min_pct", "reverse", "trend_check_interval", "block_start_sec", "block_end_sec", "block_mid_from", "block_mid_to"):
         if k in payload:
             patch[k] = payload[k]
     res = await asyncio.to_thread(engine.submit, "bot2_config", patch, 30.0)
@@ -385,13 +474,13 @@ async def api_bot2_stop() -> Dict[str, Any]:
 @app.post("/api/bot2/config")
 async def api_bot2_config(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
     allowed = {k: v for k, v in payload.items()
-               if k in ("lot", "max_trades", "tp", "sl", "symbol", "timeframe", "magic", "cooldown_sec", "slippage_points", "trend_mode", "trend_check_interval", "block_start_sec", "block_end_sec", "block_mid_from", "block_mid_to")}
+               if k in ("lot", "max_trades", "tp", "sl", "symbol", "timeframe", "magic", "cooldown_sec", "slippage_points", "trend_mode", "watch_enabled", "watch_min_pct", "reverse", "trend_check_interval", "block_start_sec", "block_end_sec", "block_mid_from", "block_mid_to")}
     return await asyncio.to_thread(engine.submit, "bot2_config", allowed, 30.0)
 
 
 @app.post("/api/bot2/check-trend")
 async def api_bot2_check_trend() -> Dict[str, Any]:
-    """Trigger manual 60s trend re-check immediately."""
+    """Trigger a manual 2.5s direction re-check immediately (watch dial or candle flow)."""
     res = await asyncio.to_thread(engine.submit, "bot2_check_trend", {}, 30.0)
     if not res.get("ok"):
         return JSONResponse(status_code=400, content=res)
@@ -451,6 +540,206 @@ async def api_bot3_recalculate() -> Dict[str, Any]:
     return await asyncio.to_thread(engine.submit, "bot3_recalculate", {}, 30.0)
 
 
+# ----------------------------------------------------------------- bot 4
+BOT4_KEYS = ("lot", "price_gap", "pre_trade_gap", "pre_trade_value", "numbering_lot",
+             "symbol", "magic", "cooldown_sec", "slippage_points", "lock_pct")
+
+
+@app.get("/api/bot4")
+async def api_bot4() -> Dict[str, Any]:
+    snap = engine.snapshot()
+    bot4 = snap.get("bot4") or engine._bot4_stub()
+    return {"ok": True, "connected": bool(snap.get("connected")), "bot4": bot4}
+
+
+@app.post("/api/bot4/start")
+async def api_bot4_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
+    """Green: bot 4 starts placing the buy / sell pre-trade ladders."""
+    patch: Dict[str, Any] = {"running": True}
+    for k in BOT4_KEYS:
+        if k in payload:
+            patch[k] = payload[k]
+    res = await asyncio.to_thread(engine.submit, "bot4_config", patch, 30.0)
+    if not res.get("ok"):
+        return JSONResponse(status_code=400, content=res)
+    return res
+
+
+@app.post("/api/bot4/stop")
+async def api_bot4_stop() -> Dict[str, Any]:
+    """Red: stop bot 4 (pre-trades cancelled, open positions keep their SL)."""
+    return await asyncio.to_thread(engine.submit, "bot4_config", {"running": False}, 30.0)
+
+
+@app.post("/api/bot4/config")
+async def api_bot4_config(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
+    allowed = {k: v for k, v in payload.items() if k in BOT4_KEYS}
+    return await asyncio.to_thread(engine.submit, "bot4_config", allowed, 30.0)
+
+
+@app.post("/api/bot4/close")
+async def api_bot4_close() -> Dict[str, Any]:
+    """Panic button: close all bot 4 positions at market + cancel pre-trades."""
+    return await asyncio.to_thread(engine.submit, "bot4_close", {}, 30.0)
+
+
+# ----------------------------------------------------------------- bot 5 (news trader)
+BOT5_KEYS = ("lot", "symbol", "magic", "mode", "min_impact", "currencies",
+             "pre_minutes", "post_minutes", "min_gap_minutes", "tp", "sl",
+             "straddle_gap", "max_trades", "cooldown_sec", "slippage_points",
+             "bias_min_score", "refresh_min", "trade_weekend",
+             "auto_close_after_news", "manual_events",
+             # sessions board: which market the Sydney/Tokyo/London/New York panel
+             # reads, and how many days of M15 history it averages
+             "session_market", "session_range_days",
+             # full AI market analysis: which market the 5m/10m/15m/1h panel
+             # reads, and which timeframe shows its target prices first
+             "ai_market", "ai_timeframe")
+
+
+@app.get("/api/bot5")
+async def api_bot5() -> Dict[str, Any]:
+    snap = engine.snapshot()
+    bot5 = snap.get("bot5") or engine._bot5_stub()
+    return {"ok": True, "connected": bool(snap.get("connected")), "bot5": bot5}
+
+
+@app.post("/api/bot5/start")
+async def api_bot5_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
+    """Green: the news trader starts watching the calendar and trading events."""
+    patch: Dict[str, Any] = {"running": True}
+    for k in BOT5_KEYS:
+        if k in payload:
+            patch[k] = payload[k]
+    res = await asyncio.to_thread(engine.submit, "bot5_config", patch, 30.0)
+    if not res.get("ok"):
+        return JSONResponse(status_code=400, content=res)
+    return res
+
+
+@app.post("/api/bot5/stop")
+async def api_bot5_stop() -> Dict[str, Any]:
+    """Red: stop the news trader (open positions keep their SL/TP)."""
+    return await asyncio.to_thread(engine.submit, "bot5_config", {"running": False}, 30.0)
+
+
+@app.post("/api/bot5/config")
+async def api_bot5_config(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
+    allowed = {k: v for k, v in payload.items() if k in BOT5_KEYS}
+    return await asyncio.to_thread(engine.submit, "bot5_config", allowed, 30.0)
+
+
+@app.post("/api/bot5/close")
+async def api_bot5_close() -> Dict[str, Any]:
+    """Panic button: close all bot 5 positions at market + cancel its stops."""
+    return await asyncio.to_thread(engine.submit, "bot5_close", {}, 30.0)
+
+
+@app.post("/api/bot5/refresh")
+@app.get("/api/bot5/refresh")
+async def api_bot5_refresh() -> Dict[str, Any]:
+    """Pull the economic calendar now.
+
+    This runs on its own thread - never on the engine thread - because a cold
+    fetch can take a few seconds and must not stall the bots.
+    """
+    try:
+        count = await asyncio.to_thread(engine.bot5.feed.fetch_once)
+    except Exception as exc:
+        count = 0
+        engine.bot5.feed.error = str(exc)
+    snap = engine.snapshot()
+    return {"ok": True, "count": count, "bot5": snap.get("bot5") or engine._bot5_stub()}
+
+
+
+# ------------------------------------------------- bot 6 (pre-trade entry)
+BOT6_KEYS = ("lot", "distance", "symbol", "magic", "side", "watch_gate",
+             "watch_min_pct", "ai_gate", "tp", "sl", "lock_pct", "lock_min_profit",
+             "cooldown_sec", "slippage_points")
+
+
+@app.get("/api/bot6")
+async def api_bot6() -> Dict[str, Any]:
+    snap = engine.snapshot()
+    bot6 = snap.get("bot6") or engine._bot6_stub()
+    return {"ok": True, "connected": bool(snap.get("connected")), "bot6": bot6}
+
+
+@app.post("/api/bot6/start")
+async def api_bot6_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
+    """Green: the pre-trade entry bot parks its pre-trade at the set Distance."""
+    patch: Dict[str, Any] = {"running": True}
+    for k in BOT6_KEYS:
+        if k in payload:
+            patch[k] = payload[k]
+    res = await asyncio.to_thread(engine.submit, "bot6_config", patch, 30.0)
+    if not res.get("ok"):
+        return JSONResponse(status_code=400, content=res)
+    return res
+
+
+@app.post("/api/bot6/stop")
+async def api_bot6_stop() -> Dict[str, Any]:
+    """Red: stop bot 6 (the pre-trade is cancelled, an open trade keeps its SL/TP)."""
+    return await asyncio.to_thread(engine.submit, "bot6_config", {"running": False}, 30.0)
+
+
+@app.post("/api/bot6/config")
+async def api_bot6_config(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
+    allowed = {k: v for k, v in payload.items() if k in BOT6_KEYS}
+    return await asyncio.to_thread(engine.submit, "bot6_config", allowed, 30.0)
+
+
+@app.post("/api/bot6/close")
+async def api_bot6_close() -> Dict[str, Any]:
+    """Panic button: close all bot 6 trades at market + cancel the pre-trade."""
+    return await asyncio.to_thread(engine.submit, "bot6_close", {}, 30.0)
+
+
+# ------------------------------------------------- bot 7 (reversal candle)
+BOT7_KEYS = ("lot", "symbol", "magic", "timeframe", "reverse_dist", "min_body",
+             "tp", "sl", "lock_pct", "lock_min_profit", "watch_gate",
+             "watch_min_pct", "ai_gate", "max_trades", "cooldown_sec", "slippage_points")
+
+
+@app.get("/api/bot7")
+async def api_bot7() -> Dict[str, Any]:
+    snap = engine.snapshot()
+    bot7 = snap.get("bot7") or engine._bot7_stub()
+    return {"ok": True, "connected": bool(snap.get("connected")), "bot7": bot7}
+
+
+@app.post("/api/bot7/start")
+async def api_bot7_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
+    """Green: the reversal bot starts hunting candle reversals."""
+    patch: Dict[str, Any] = {"running": True}
+    for k in BOT7_KEYS:
+        if k in payload:
+            patch[k] = payload[k]
+    res = await asyncio.to_thread(engine.submit, "bot7_config", patch, 30.0)
+    if not res.get("ok"):
+        return JSONResponse(status_code=400, content=res)
+    return res
+
+
+@app.post("/api/bot7/stop")
+async def api_bot7_stop() -> Dict[str, Any]:
+    """Red: stop bot 7 (an open reversal trade keeps its SL/TP)."""
+    return await asyncio.to_thread(engine.submit, "bot7_config", {"running": False}, 30.0)
+
+
+@app.post("/api/bot7/config")
+async def api_bot7_config(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
+    allowed = {k: v for k, v in payload.items() if k in BOT7_KEYS}
+    return await asyncio.to_thread(engine.submit, "bot7_config", allowed, 30.0)
+
+
+@app.post("/api/bot7/close")
+async def api_bot7_close() -> Dict[str, Any]:
+    """Panic button: close all bot 7 trades at market."""
+    return await asyncio.to_thread(engine.submit, "bot7_close", {}, 30.0)
+
 
 # --------------------------------------------------------------- EA bridge
 def _check_secret(request: Request, payload: Optional[Dict[str, Any]] = None) -> bool:
@@ -495,7 +784,13 @@ async def api_ea_event_get(request: Request) -> Dict[str, Any]:
 
 
 @app.get("/api/ea/ping")
-async def api_ea_ping() -> Dict[str, Any]:
+async def api_ea_ping(request: Request) -> Dict[str, Any]:
+    # when the caller presents a token, validate it right here - the EA status
+    # line then shows OFFLINE for a wrong token instead of pushing blind 401s
+    supplied = request.headers.get("x-ea-token") or request.headers.get("x-ea-secret")
+    secret = cfg.CONFIG.get("ea_secret", "")
+    if secret and supplied and supplied != secret:
+        raise HTTPException(401, "invalid EA token")
     return {"ok": True, "service": cfg.APP_NAME, "version": cfg.VERSION, "time": int(time.time())}
 
 
@@ -523,11 +818,11 @@ async def ws_endpoint(ws: WebSocket) -> None:
             except Exception:
                 continue
             if data.get("type") == "ping":
-                await ws.send_json({"type": "pong", "ts": int(time.time() * 1000)})
+                await hub._send_safe(ws, {"type": "pong", "ts": int(time.time() * 1000)})
             elif data.get("type") == "refresh":
                 snap = engine.snapshot()
                 if snap:
-                    await ws.send_json({"type": "state", "data": snap})
+                    await hub._send_safe(ws, {"type": "state", "data": snap})
     except WebSocketDisconnect:
         pass
     except Exception:
@@ -568,7 +863,7 @@ def main() -> None:
     print(f"  API docs  : http://{host}:{port}/api/docs")
     print(f"  EA bridge : http://{host}:{port}/api/ea/event")
     print(f"  EA token  : {cfg.CONFIG.get('ea_secret', '')}\n")
-    uvicorn.run(app, host=host, port=port, log_level="warning", ws_ping_interval=20, ws_ping_timeout=20)
+    uvicorn.run(app, host=host, port=port, log_level="warning", ws_ping_interval=None, ws_ping_timeout=None)
 
 
 if __name__ == "__main__":

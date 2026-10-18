@@ -9,18 +9,28 @@ Strategy Specification
 3. Market Selection & Live Price:
    - Selection chips (e.g. BTCUSDTm, BTCUSDm, XAUUSDm, etc.) and live Ask / Bid / Spread.
 4. Watch Pressure Trend System (connected to the Market Pressure Watch Dials):
-   - Every trend_check_interval seconds (default 2.5s) the bot reads the live
-     buyer/seller pressure of the watch dial for its symbol.
-   - BUYER pressure  -> BUY trade only.
-   - SELLER pressure -> SELL trade only.
-   - NEUTRAL pressure -> strictly NO trade.
+   - The Watch button switches this system ON / OFF.
+   - ON: every trend_check_interval seconds (default 2.5s) the bot reads the live
+     buyer/seller pressure of the watch dial for its symbol and trades only when
+     that side's pressure is >= the Watch % field (nothing is fixed - whatever
+     the user enters is what is checked).
+   - BUYER pressure >= Watch %  -> BUY trade only.
+   - SELLER pressure >= Watch % -> SELL trade only.
+   - NEUTRAL / below the Watch % -> strictly NO trade.
+   - OFF: the dial is ignored completely and the bot follows the candle - the
+     side the 1-minute candle is actually moving to (candle UP -> BUY, candle
+     DOWN -> SELL), one trade per 2.5s timer tick.
+   - Reverse button: whatever direction the bot would take, it takes the exact
+     opposite (BUY -> SELL, SELL -> BUY).
 5. Market Structure Levels (Day & Weekend):
    - Shows Higher High (HH), Lower High (LH), Higher Low (HL), Lower Low (LL) for both
      Day (D1) and Weekend/Week (W1).
    - Key interaction rules (watch pressure still gates the direction):
      * Lower Low (LL) / Higher Low (HL) price  -> BUY  (only with BUYER pressure)
      * Higher High (HH) / Lower High (LH) price -> SELL (only with SELLER pressure)
-     * NEUTRAL pressure blocks structure trades too.
+     * NEUTRAL pressure (while Watch is ON) blocks structure trades too.
+     * While Watch is OFF, structure levels are traded in their own natural
+       direction (LL/HL -> BUY, HH/LH -> SELL) with no dial gate.
 6. Continuous Trading:
    - As price and pressure move, it continues to take trades as long as running
      trades < Max Trades limit, always one trade per 2.5s timer tick.
@@ -59,8 +69,12 @@ DEFAULTS: Dict[str, Any] = {
     "magic": 777002,     # distinct magic number from Bot 1 (777001)
     "slippage_points": 30,
     "cooldown_sec": 2.5,
-    "trend_mode": False,   # Set to True via config / UI toggle
+    "trend_mode": True,    # legacy alias of watch_enabled - one switch, kept in sync
     "trend_check_interval": 2.5,   # Periodic trend check interval (seconds, default 2.5s)
+    "watch_enabled": True,   # Watch ON/OFF switch for this bot (the UI button)
+    "watch_min_pct": 60.0,   # Watch pressure % the user enters - trades only at/above it
+    "reverse": False,        # Reverse button: flip every trade to the opposite side
+    "watch_min_threshold_pct": 60.0,  # legacy alias of watch_min_pct (older configs)
     # 1-minute candle time-window no-trade blocks. These defaults are only the
     # initial display values - the user's UI field entries are authoritative and
     # nothing here is enforced as a fixed system value.
@@ -102,18 +116,46 @@ def _as_dict(obj: Any) -> Dict[str, Any]:
     asdict = getattr(obj, "_asdict", None)
     if callable(asdict):
         return dict(asdict())
+    # numpy structured row (MT5 candles) / slots object: read the real fields;
+    # the old dict(vars(obj)) last resort raised TypeError on a numpy row and
+    # killed the caller's whole tick, so nothing here may raise any more.
+    names = getattr(getattr(obj, "dtype", None), "names", None)
+    if names:
+        out: Dict[str, Any] = {}
+        for n in names:
+            try:
+                out[str(n)] = obj[n]
+            except Exception:
+                continue
+        if out:
+            return out
+    slots = getattr(obj, "__slots__", None) or getattr(obj, "_fields", None)
+    if slots:
+        out = {}
+        for s in slots:
+            try:
+                out[str(s)] = getattr(obj, s)
+            except Exception:
+                continue
+        if out:
+            return out
     try:
         return dict(obj)
     except (TypeError, ValueError):
-        return dict(vars(obj))
+        pass
+    try:
+        return dict(vars(obj))          # plain object carrying a __dict__
+    except TypeError:
+        return {}
 
 
 class TrendStructureBot:
     """Candle Momentum & Market Structure Bot."""
 
-    def __init__(self, logger=None) -> None:
+    def __init__(self, logger=None, clock_provider=None) -> None:
         self.cfg: Dict[str, Any] = dict(DEFAULTS)
         self.logger = logger
+        self.clock_provider = clock_provider      # engine's server clock, or None
         self.symbol: str = ""
         self.symbol_ok: bool = False
         self.symbol_substituted: str = ""
@@ -138,9 +180,9 @@ class TrendStructureBot:
         self._structure_cache_ts: float = 0.0
         # Watch Pressure Trend System (source of truth: market watch dials)
         self._last_trend_check_ts: float = 0.0
-        self._current_trend: str = "UP"
+        self._current_trend: str = "NEUTRAL"
         self._trend_score: int = 0
-        self._trend_details: str = "Awaiting 2.5s check"
+        self._trend_details: str = "Awaiting 2.5s watch check (NEUTRAL)"
         self._trend_history: List[Dict[str, Any]] = []
         # Live watch pressure: "BUYER" | "SELLER" | "NEUTRAL"
         self._watch_pressure: str = "NEUTRAL"
@@ -156,6 +198,43 @@ class TrendStructureBot:
                 self.logger(kind, f"[Bot2] {message}")
             except Exception:
                 pass
+
+    def _server_now(self) -> float:
+        """MT5 broker time when available - bar timestamps are broker epochs."""
+        if self.clock_provider:
+            try:
+                return float(self.clock_provider())
+            except Exception:
+                pass
+        return time.time()
+
+    # ------------------------------------------------- watch switch & reverse
+    def _watch_on(self) -> bool:
+        """Watch switch: True = the dials decide the direction, False = candle flow.
+
+        `trend_mode` is the older name of exactly this switch, so either one being
+        off means the Watch is off (and update_config keeps them in sync).
+        """
+        return bool(self.cfg.get("watch_enabled", True)) and bool(self.cfg.get("trend_mode", True))
+
+    def _watch_min_pct(self) -> float:
+        """The Watch % from the UI field - whatever the user typed is what gates trades."""
+        val = self.cfg.get("watch_min_pct")
+        if val in (None, ""):
+            val = self.cfg.get("watch_min_threshold_pct")
+        try:
+            return min(99.0, max(1.0, float(val)))
+        except (TypeError, ValueError):
+            return 60.0
+
+    def _apply_reverse(self, side: str) -> str:
+        """Reverse switch: buys become sells and sells become buys."""
+        s = str(side or "").lower()
+        if s not in ("buy", "sell"):
+            return s
+        if bool(self.cfg.get("reverse")):
+            return "sell" if s == "buy" else "buy"
+        return s
 
     def update_config(self, patch: Dict[str, Any]) -> Dict[str, Any]:
         old_symbol = str(self.cfg.get("symbol") or "").strip()
@@ -194,8 +273,19 @@ class TrendStructureBot:
             pass
         tf = str(self.cfg.get("timeframe") or "D1").upper()
         self.cfg["timeframe"] = tf if tf in ("D1", "W1") else "D1"
-        if "trend_mode" in (patch or {}):
-            self.cfg["trend_mode"] = bool(patch["trend_mode"])
+        # Watch switch & Watch % : the UI keys (watch_enabled / watch_min_pct) and
+        # the older config keys (trend_mode / watch_min_threshold_pct) are two names
+        # for the same settings - they must never disagree.
+        patch = patch or {}
+        if "watch_enabled" in patch:
+            self.cfg["watch_enabled"] = bool(self.cfg.get("watch_enabled"))
+        elif "trend_mode" in patch:
+            self.cfg["watch_enabled"] = bool(self.cfg.get("trend_mode"))
+        self.cfg["watch_enabled"] = bool(self.cfg.get("watch_enabled", True))
+        self.cfg["trend_mode"] = self.cfg["watch_enabled"]
+        self.cfg["watch_min_pct"] = self._watch_min_pct()
+        self.cfg["watch_min_threshold_pct"] = self.cfg["watch_min_pct"]
+        self.cfg["reverse"] = bool(self.cfg.get("reverse", False))
         return dict(self.cfg)
 
     # ------------------------------------------------------------ symbol info
@@ -437,23 +527,28 @@ class TrendStructureBot:
             self._watch_pressure = "NEUTRAL"
             return self._watch_pressure
 
-        # 52% Watch threshold rule:
-        # 1. Trade neyar age, Watch market check korbe: Buy ba Sell (52%) er beshi hole, buy ba sell nibe.
-        # 2. 52% er kom hole trade nibe na.
-        if buyer > 52.0:
+        # Watch threshold rule (the value comes from the Watch % field - nothing
+        # here is fixed): the side whose pressure is >= the entered % is dominant.
+        min_pct = self._watch_min_pct()
+        if buyer >= min_pct:
             self._watch_pressure = "BUYER"
-        elif seller > 52.0:
+        elif seller >= min_pct:
             self._watch_pressure = "SELLER"
         else:
             self._watch_pressure = "NEUTRAL"
         return self._watch_pressure
 
     def _check_watch_threshold(self, side: str, sym: str = "") -> tuple[bool, str]:
-        """Checks if the watch market pressure for the requested side is > 52%.
-        Rule:
-        1. Trade neyar age, Watch market check korbe: Buy ba Sell (52%) er beshi hole, buy ba sell nibe.
-        2. 52% er kom hole trade nibe na.
+        """Checks the watch pressure of the requested side against the Watch % field.
+
+        Rule (while the Watch switch is ON):
+        1. Trade neyar age, Watch market check korbe: Buy ba Sell joto % deya hobe
+           (Watch field) seto % ba tar beshi hole buy ba sell nibe.
+        2. Field er kom hole trade nibe na.
+        Watch switch OFF -> the dial is not consulted at all (candle flow decides).
         """
+        if not self._watch_on():
+            return (True, "watch off - dial not consulted")
         if self._watch_provider is None:
             return (True, "no_watch_provider")
         sym = sym or self.symbol
@@ -464,31 +559,37 @@ class TrendStructureBot:
         except Exception as exc:
             return (False, f"watch provider error: {exc}")
         if not w:
-            return (False, f"no watch data for {sym}")
+            return (False, f"no watch data for {sym} - strictly blocked")
 
         buyer = float(w.get("buyer_pct") or 50.0)
         seller = float(w.get("seller_pct") or 50.0)
         self._watch_buyer_pct = buyer
         self._watch_seller_pct = seller
+        # stale dial data (older than 30s) blocks the trade, same rule as the
+        # direction gate: no trading on stale facts
+        ts = float(w.get("updated_at") or 0.0)
+        if ts > 0 and (time.time() - ts) > 30.0:
+            return (False, f"stale watch data ({time.time() - ts:.0f}s old)")
 
+        min_pct = self._watch_min_pct()
         is_buy = str(side).lower() == "buy"
         if is_buy:
-            if buyer > 52.0:
-                return (True, f"Watch BUY {buyer:.1f}% > 52% (allowed)")
+            if buyer >= min_pct:
+                return (True, f"Watch BUY {buyer:.1f}% >= {min_pct:.0f}% (allowed)")
             else:
-                return (False, f"Watch BUY {buyer:.1f}% <= 52% (blocked: 52% er kom)")
+                return (False, f"Watch BUY {buyer:.1f}% < {min_pct:.0f}% (blocked: below Watch %)")
         else:
-            if seller > 52.0:
-                return (True, f"Watch SELL {seller:.1f}% > 52% (allowed)")
+            if seller >= min_pct:
+                return (True, f"Watch SELL {seller:.1f}% >= {min_pct:.0f}% (allowed)")
             else:
-                return (False, f"Watch SELL {seller:.1f}% <= 52% (blocked: 52% er kom)")
+                return (False, f"Watch SELL {seller:.1f}% < {min_pct:.0f}% (blocked: below Watch %)")
 
     def check_trend(self, force: bool = False, sym: str = "") -> str:
         """Checks the watch-dial pressure trend: UP (= BUYER) or DOWN (= SELLER).
 
         Runs periodically every 2.5 seconds (or immediately if force=True).
         The direction comes straight from the Market Pressure Watch dials -
-        NEUTRAL pressure (<= 52%) means 'no direction', which blocks every trade.
+        NEUTRAL pressure (<= 60%) means 'no direction', which blocks every trade.
         """
         sym = sym or self.symbol
         if not sym:
@@ -501,15 +602,23 @@ class TrendStructureBot:
         if not force and self._last_trend_check_ts > 0 and (now - self._last_trend_check_ts) < interval:
             return self._current_trend
 
-        pressure = self._read_watch_pressure(sym)
+        if not self._watch_on():
+            # Watch OFF: the dials decide nothing. The direction (and the pill on
+            # the dashboard) follows the running candle instead: price above the
+            # candle open = UP, below = DOWN, otherwise NEUTRAL.
+            return self._refresh_candle_trend(sym, now)
 
-        # Watch pressure -> trend: BUYER = UP (buy > 52%), SELLER = DOWN (sell > 52%), NEUTRAL = no trade (<= 52%)
+        pressure = self._read_watch_pressure(sym)
+        min_pct = self._watch_min_pct()
+
+        # Watch pressure -> trend: BUYER = UP, SELLER = DOWN (both at/above the
+        # Watch % field), NEUTRAL = no trade (below the field value)
         if pressure == "BUYER":
-            new_trend, score, details = "UP", 1, f"Watch: BUYER {self._watch_buyer_pct:.1f}% (> 52%) vs SELLER {self._watch_seller_pct:.1f}%"
+            new_trend, score, details = "UP", 1, f"Watch: BUYER {self._watch_buyer_pct:.1f}% (>= {min_pct:.0f}%) vs SELLER {self._watch_seller_pct:.1f}%"
         elif pressure == "SELLER":
-            new_trend, score, details = "DOWN", -1, f"Watch: SELLER {self._watch_seller_pct:.1f}% (> 52%) vs BUYER {self._watch_buyer_pct:.1f}%"
+            new_trend, score, details = "DOWN", -1, f"Watch: SELLER {self._watch_seller_pct:.1f}% (>= {min_pct:.0f}%) vs BUYER {self._watch_buyer_pct:.1f}%"
         else:
-            new_trend, score, details = "NEUTRAL", 0, f"Watch: NEUTRAL (BUY {self._watch_buyer_pct:.1f}% / SELL {self._watch_seller_pct:.1f}% <= 52%) - no trade"
+            new_trend, score, details = "NEUTRAL", 0, f"Watch: NEUTRAL (BUY {self._watch_buyer_pct:.1f}% / SELL {self._watch_seller_pct:.1f}% < {min_pct:.0f}%) - no trade"
 
         old_trend = self._current_trend
         self._current_trend = new_trend
@@ -536,11 +645,60 @@ class TrendStructureBot:
         if len(self._trend_history) > 10:
             self._trend_history.pop(0)
 
-        if not self._last_trend_check_ts or new_trend != old_trend:
+        if new_trend != old_trend:
             self._log("info", f"2.5s Trend Update: {new_trend} (Score: {score:+d} | {details})")
-        else:
+        elif now - getattr(self, "_trend_confirmed_last_log", 0) >= 300:
+            self._trend_confirmed_last_log = now
             self._log("info", f"2.5s Trend Confirmed: {new_trend} (Score: {score:+d})")
 
+        return new_trend
+
+    def _candle_flow_trend(self, sym: str) -> tuple[str, int, str]:
+        """Direction of the running 1-minute candle (used while Watch is OFF).
+
+        Follow mode: the side the candle is actually moving to is the side traded
+        - candle up -> BUY, candle down -> SELL. A flat candle never trades.
+        """
+        if mt5 is None or not sym:
+            return ("NEUTRAL", 0, "Candle flow: no terminal data")
+        try:
+            tick = mt5.symbol_info_tick(sym)
+            rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 1)
+        except Exception as exc:
+            return ("NEUTRAL", 0, f"Candle flow error: {exc}")
+        if not tick or rates is None or len(rates) == 0:
+            return ("NEUTRAL", 0, "Candle flow: waiting for the candle")
+        ask = float(getattr(tick, "ask", 0.0) or 0.0)
+        bid = float(getattr(tick, "bid", 0.0) or 0.0)
+        price = (ask + bid) / 2.0 if (ask and bid) else (bid or ask)
+        try:
+            bar_open = float(rates[-1]["open"])
+        except (KeyError, TypeError, ValueError, IndexError):
+            return ("NEUTRAL", 0, "Candle flow: unreadable candle")
+        if not price or not bar_open:
+            return ("NEUTRAL", 0, "Candle flow: no price")
+        threshold = max(abs(ask - bid) * 0.5, self._point(sym))
+        diff = price - bar_open
+        if diff > threshold:
+            return ("UP", 1, f"Candle flow UP (price {price:g} above candle open {bar_open:g})")
+        if diff < -threshold:
+            return ("DOWN", -1, f"Candle flow DOWN (price {price:g} below candle open {bar_open:g})")
+        return ("NEUTRAL", 0, f"Candle flow flat (price {price:g} around candle open {bar_open:g})")
+
+    def _refresh_candle_trend(self, sym: str, now: float) -> str:
+        """Stores the candle-flow trend with the same history/logging as the dial check."""
+        new_trend, score, details = self._candle_flow_trend(sym)
+        old_trend = self._current_trend
+        self._current_trend = new_trend
+        self._trend_score = score
+        self._trend_details = details
+        self._last_trend_check_ts = now
+        self._trend_history.append({"time": now, "trend": new_trend, "score": score,
+                                    "price": 0.0, "details": details})
+        if len(self._trend_history) > 10:
+            self._trend_history.pop(0)
+        if new_trend != old_trend:
+            self._log("info", f"2.5s Candle Flow: {new_trend} ({details})")
         return new_trend
 
     def _calculate_market_trend(self, sym: str) -> tuple[str, int, str]:
@@ -673,6 +831,17 @@ class TrendStructureBot:
             out.append(d)
         return out
 
+    def _next_side(self) -> str:
+        """Which side this bot would take right now (Reverse already applied)."""
+        side = ""
+        if self._watch_on() and self._current_trend in ("UP", "DOWN"):
+            side = "buy" if self._current_trend == "UP" else "sell"
+        elif self._last_candle_dir == "UP":
+            side = "buy"
+        elif self._last_candle_dir == "DOWN":
+            side = "sell"
+        return self._apply_reverse(side).upper() if side else ""
+
     # ------------------------------------------------------------------ tick
     def tick(self) -> None:
         if mt5 is None or not self.symbol:
@@ -735,7 +904,8 @@ class TrendStructureBot:
            At least 5.0 seconds between consecutive trades,
            and at least 5.0 seconds after previous trade closes.
         """
-        trend_mode = bool(self.cfg.get("trend_mode"))
+        # `trend_mode` is the legacy name of the Watch switch - one setting, two names.
+        trend_mode = self._watch_on()
         max_trades = max(1, int(self.cfg.get("max_trades") or 1))
         current_running = len(positions)
 
@@ -792,20 +962,20 @@ class TrendStructureBot:
         tolerance = max(spread * 3.0, current_price * 0.0005)
         market_trend = self.compute_market_trend(sym)
 
-        # Watch-pressure gate (rules 1-3): direction comes from the watch dial and
-        # NEUTRAL pressure (<= 52%) blocks every trade.
-        if self._watch_provider is not None:
+        # Watch switch ON: the dial decides the direction and NEUTRAL pressure
+        # (below the Watch % field) blocks every trade. Watch switch OFF: the dial
+        # is ignored completely and the candle flow below decides.
+        min_pct = self._watch_min_pct()
+        watch_on = self._watch_on()
+        if watch_on and self._watch_provider is not None:
             if market_trend == "NEUTRAL":
-                self._log("info", f"Watch pressure NEUTRAL (<= 52%) - no trade ({self._trend_details})")
+                self._log("info", f"Watch pressure NEUTRAL (< {min_pct:.0f}%) - no trade ({self._trend_details})")
                 return
             watch_dir_allows_buy = (market_trend == "UP")
             watch_dir_allows_sell = (market_trend == "DOWN")
         else:
-            if trend_mode and market_trend == "NEUTRAL":
-                self._log("info", f"Watch pressure NEUTRAL - no trade ({self._trend_details})")
-                return
-            watch_dir_allows_buy = (not trend_mode) or (market_trend == "UP")
-            watch_dir_allows_sell = (not trend_mode) or (market_trend == "DOWN")
+            watch_dir_allows_buy = True
+            watch_dir_allows_sell = True
 
         if hh is not None and lh is not None and hl is not None and ll is not None:
             # * Lower Low price -> BUY (only with BUYER pressure in trend mode)
@@ -870,34 +1040,34 @@ class TrendStructureBot:
         self._last_candle_dir = candle_dir
 
         if trend_mode:
-            # 2.5-SECOND TIMER WATCH-PRESSURE EXECUTION (rules 1-4):
-            # 1. NEUTRAL watch pressure (<= 52%) -> strictly no trade
-            # 2. BUYER pressure (> 52%)  -> BUY trade
-            # 3. SELLER pressure (> 52%) -> SELL trade
+            # WATCH ON - 2.5-SECOND TIMER WATCH-PRESSURE EXECUTION:
+            # 1. NEUTRAL watch pressure (below the Watch % field) -> strictly no trade
+            # 2. BUYER pressure >= the Watch % -> BUY trade
+            # 3. SELLER pressure >= the Watch % -> SELL trade
             # 4. one trade per 2.5s timer tick, up to max_trades concurrent trades
             if market_trend == "UP":
                 if self._open_market_trade("buy", "bot2_watch_buyer_buy"):
                     self._last_order_ts = now
                     self._last_candle_time = bar_time
                 else:
-                    self._last_order_ts = now - (cd - 0.5)  # throttle retry on failure
+                    self._last_order_ts = now  # wait a full cooldown before retrying
             elif market_trend == "DOWN":
                 if self._open_market_trade("sell", "bot2_watch_seller_sell"):
                     self._last_order_ts = now
                     self._last_candle_time = bar_time
                 else:
-                    self._last_order_ts = now - (cd - 0.5)  # throttle retry on failure
+                    self._last_order_ts = now  # wait a full cooldown before retrying
             # NEUTRAL already returned above - nothing to do
         else:
-            # Default counter-flow mode:
+            # WATCH OFF - follow the candle: the side the candle is actually moving
+            # to is the side traded (candle UP -> BUY, candle DOWN -> SELL), one
+            # trade per 2.5s timer tick, up to max_trades concurrent trades.
             if candle_dir == "UP":
-                # Candle moving UP -> Take SELL trade
-                if self._open_market_trade("sell", "bot2_candle_up_sell"):
+                if self._open_market_trade("buy", "bot2_candle_up_buy"):
                     self._last_order_ts = now
                     self._last_candle_time = bar_time
             elif candle_dir == "DOWN":
-                # Candle moving DOWN -> Take BUY trade
-                if self._open_market_trade("buy", "bot2_candle_down_buy"):
+                if self._open_market_trade("sell", "bot2_candle_down_sell"):
                     self._last_order_ts = now
                     self._last_candle_time = bar_time
 
@@ -925,7 +1095,10 @@ class TrendStructureBot:
             return ""
         if bar_time <= 0:
             return ""
-        elapsed = time.time() - bar_time
+        # bar timestamps are MT5 *server* wall-clock epochs; comparing them
+        # against the local clock (time.time) shifts the whole window by the
+        # broker offset and silently kills the gate on non-GMT+0 servers
+        elapsed = self._server_now() - bar_time
         if elapsed < 0.0 or elapsed >= 60.0:
             # not the running candle (stale/future feed) - window gate does not apply
             return ""
@@ -942,15 +1115,28 @@ class TrendStructureBot:
         return ""
 
     def _open_market_trade(self, side: str, comment: str) -> bool:
-        """Places a market BUY or SELL trade with TP & SL."""
+        """Places a market BUY or SELL trade with TP & SL.
+
+        The Watch gate checks the side the bot decided on (the dials confirm the
+        direction), then the Reverse switch flips the order that really reaches
+        the broker.
+        """
         if getattr(self, "_order_in_progress", False):
             return False
 
-        # Rule: trade neyar age, Watch market check korbe (52% er beshi hole trade, 52% er kom hole trade nibe na)
-        allowed, reason = self._check_watch_threshold(side, self.symbol)
+        wanted = str(side or "").lower()
+
+        # Rule: trade neyar age, Watch market check korbe (Watch field er % ba tar
+        # beshi hole trade). The gate validates the decided side - Reverse then
+        # flips the order that is placed, so the button always works.
+        allowed, reason = self._check_watch_threshold(wanted, self.symbol)
         if not allowed:
-            self._log("info", f"Watch 52% Gate: {reason} [{comment}]")
+            self._log("info", f"Watch Gate: {reason} [{comment}]")
             return False
+
+        side = self._apply_reverse(wanted)
+        if side != wanted:
+            comment = f"{comment}_rev"
 
         self._order_in_progress = True
         try:
@@ -977,8 +1163,12 @@ class TrendStructureBot:
                 tp_dist = round(tp_dollar / mpp, digits)
                 sl_dist = round(sl_dollar / mpp, digits)
             else:
-                tp_dist = round(tp_dollar, digits)
-                sl_dist = round(sl_dollar, digits)
+                # without a tick-value reading the dollars cannot be converted
+                # to a price distance - trading with the raw dollars as price
+                # units would place SL/TP 100x off on high-priced symbols
+                self._log("warn", f"Trade skipped: cannot price TP/SL on {sym} "
+                                  f"(tick value unavailable) [{comment}]")
+                return False
 
             sl_price = 0.0
             tp_price = 0.0
@@ -1160,7 +1350,11 @@ class TrendStructureBot:
             "watch_pressure": self._watch_pressure,
             "watch_buyer_pct": round(self._watch_buyer_pct, 1),
             "watch_seller_pct": round(self._watch_seller_pct, 1),
-            "watch_min_threshold_pct": 52.0,
+            "watch_enabled": self._watch_on(),
+            "watch_min_pct": self._watch_min_pct(),
+            "watch_min_threshold_pct": self._watch_min_pct(),
+            "reverse": bool(self.cfg.get("reverse")),
+            "next_side": self._next_side(),
             "trend_checked_ts": self._last_trend_check_ts,
             "trend_interval": interval,
             "trend_next_check_in": next_check_in,

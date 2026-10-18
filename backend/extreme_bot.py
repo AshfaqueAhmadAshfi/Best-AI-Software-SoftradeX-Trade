@@ -181,17 +181,27 @@ class ExtremeStructureBot:
             return 0.01
 
     def money_per_price(self, lot: float = 0.01, symbol: str = "") -> float:
+        """Account money gained per 1.0 of price movement (0.0 = unknown)."""
         sym = symbol or self.symbol
         if mt5 is None or not sym:
-            return 1.0
+            return 0.0
         try:
             tick = mt5.symbol_info_tick(sym)
             bid = float(tick.bid) if tick else 0.0
             if not bid:
-                return 1.0
+                return 0.0
             p1 = mt5.order_calc_profit(mt5.ORDER_TYPE_BUY, sym, lot, bid, bid + 1.0)
             if p1 is not None and p1 > 0:
                 return float(p1)
+        except Exception:
+            pass
+        # order_calc_profit unavailable -> fall back to the tick-value math
+        try:
+            info = mt5.symbol_info(sym)
+            tick_value = float(getattr(info, "trade_tick_value", 0.0) or 0.0)
+            tick_size = float(getattr(info, "trade_tick_size", 0.0) or 0.0)
+            if tick_value > 0 and tick_size > 0:
+                return (tick_value / tick_size) * float(lot)
         except Exception:
             pass
         if "XAU" in sym.upper() or "GOLD" in sym.upper():
@@ -435,6 +445,9 @@ class ExtremeStructureBot:
         for p in positions:
             if self._close_position(p, reason):
                 closed += 1
+                # mark as self-closed so tick() does not count it again as an
+                # "external" close in its vanish branch
+                self._self_closed.add(int(p.get("ticket") or 0))
         self._log("warn", f"Bot3 Closed all ({closed} positions) [{reason}]")
         self.cfg["running"] = False
         return closed
@@ -491,6 +504,15 @@ class ExtremeStructureBot:
         if not self.symbol:
             self.resolve_symbol()
             if not self.symbol:
+                return
+
+        # the dashboard switched market -> clear the OLD instrument first, so
+        # positions on the previous symbol are never orphaned (they would be
+        # invisible to _all_positions() which filters by the new symbol)
+        if self._symbol_changed:
+            self._symbol_changed = False
+            self.close_all("market switched")
+            if not bool(self.cfg.get("running")):
                 return
 
         positions = self._all_positions()
@@ -689,26 +711,30 @@ class ExtremeStructureBot:
         sl_dollar = float(self.cfg.get("sl") or 5.00)
         mpp = self.money_per_price(lot, sym)
 
-        if mpp > 0:
-            tp_dist = round(tp_dollar / mpp, digits)
-            sl_dist = round(sl_dollar / mpp, digits)
-        else:
-            tp_dist = round(tp_dollar, digits)
-            sl_dist = round(sl_dollar, digits)
+        if mpp <= 0:
+            # without a tick-value reading the dollars cannot be converted to
+            # a price distance - sending the raw dollars as price units would
+            # place SL/TP 100x off on high-priced symbols
+            self._log("warn", f"Trade skipped: cannot price TP/SL on {sym} (tick value unavailable) [{comment}]")
+            return False
+        tp_dist = round(tp_dollar / mpp, digits)
+        sl_dist = round(sl_dollar / mpp, digits)
 
         sl_price = 0.0
         tp_price = 0.0
 
         if is_buy:
-            if sl_dist >= min_stop:
-                sl_price = round(price - sl_dist, digits)
-            if tp_dist >= min_stop:
-                tp_price = round(price + tp_dist, digits)
+            if sl_dist > 0:
+                # clamp up to the broker minimum instead of silently sending a
+                # stop-less position (a dropped SL is never re-checked here)
+                sl_price = round(price - max(sl_dist, min_stop), digits)
+            if tp_dist > 0:
+                tp_price = round(price + max(tp_dist, min_stop), digits)
         else:
-            if sl_dist >= min_stop:
-                sl_price = round(price + sl_dist, digits)
-            if tp_dist >= min_stop:
-                tp_price = round(price - tp_dist, digits)
+            if sl_dist > 0:
+                sl_price = round(price + max(sl_dist, min_stop), digits)
+            if tp_dist > 0:
+                tp_price = round(price - max(tp_dist, min_stop), digits)
 
         req = {
             "action": mt5.TRADE_ACTION_DEAL,

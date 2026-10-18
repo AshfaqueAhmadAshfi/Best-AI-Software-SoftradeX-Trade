@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Dict
 
@@ -121,6 +123,7 @@ DEFAULTS: Dict[str, Any] = {
         "cooldown_sec": 5.0,
         "trend_mode": True,    # If True, trade strictly in the market trend direction
         "trend_check_interval": 2.5,   # 2.5s periodic trend checking
+        "watch_min_threshold_pct": 60.0,  # Watch dial pressure threshold (>60% to trade)
         # 1-minute candle time-window no-trade blocks (seconds). User-editable
         # from the Bot 2 panel - the entered values are authoritative.
         "block_start_sec": 10.0,   # no trade in the FIRST N seconds of a candle
@@ -141,6 +144,90 @@ DEFAULTS: Dict[str, Any] = {
         "slippage_points": 30,
         "cooldown_sec": 2.0,
         "tolerance_pct": 0.0006,
+    },
+    # ---- pre-trade ladder bot: N buys above + N sells below (see backend/pretrade_bot.py) ----
+    "bot4": {
+        "running": False,
+        "lot": 0.01,           # same lot for every pre-trade (unless numbering)
+        "price_gap": 1.0,      # $ from the market price to the FIRST pre-trade
+        "pre_trade_gap": 0.5,  # $ between two successive pre-trade levels
+        "pre_trade_value": 5,  # N levels per side (N buy above + N sell below)
+        "numbering_lot": False, # ON -> lots auto-numbered 0.01, 0.02, 0.03 ...
+        "symbol": "XAUUSDm",
+        "magic": 777004,
+        "slippage_points": 30,
+        "cooldown_sec": 2.0,
+        "lock_pct": 60.0,      # SL locks 60% of the current profit
+    },
+    # ---- news trader: trades the economic calendar (see backend/news_bot.py) ----
+    "bot5": {
+        "running": False,
+        "lot": 0.01,
+        "symbol": "XAUUSDm",
+        "magic": 777005,        # distinct from bot1..bot4 (777001..777004)
+        "mode": "anticipate",   # anticipate | straddle | follow
+        "min_impact": "high",   # high | medium | all
+        "currencies": "",       # empty = the selected market's own currencies
+        "pre_minutes": 5.0,     # enter this many minutes BEFORE the release
+        "post_minutes": 15.0,   # close this many minutes AFTER the release
+        "min_gap_minutes": 15.0,
+        "tp": 3.0,             # take profit in account money
+        "sl": 3.0,             # stop loss in account money
+        "straddle_gap": 3.0,    # $ from the price for the straddle stops
+        "max_trades": 1,
+        "cooldown_sec": 30.0,
+        "slippage_points": 30,
+        "bias_min_score": 1,
+        "trade_weekend": False,
+        "refresh_min": 15.0,
+        "auto_close_after_news": True,
+        # ---- trading sessions board (Sydney / Tokyo / London / New York) ----
+        "session_market": "",        # empty = the market of this bot
+        "session_range_days": 20.0,   # days of M15 history averaged per session
+        # ---- full AI market analysis (5m / 10m / 15m / 1h, see market_ai.py) ----
+        "ai_market": "",             # empty = the market of this bot
+        "ai_timeframe": "M15",        # timeframe whose target prices are shown first
+        "manual_events": [],
+    },
+    # ---- pre-trade entry bot: one pre-trade at a Distance, Watch-gated
+    #      (see backend/entry_bot.py) ----
+    "bot6": {
+        "running": False,
+        "lot": 0.01,
+        "distance": 1.0,        # $ from the market price to the pre-trade
+        "symbol": "XAUUSDm",
+        "magic": 777006,         # distinct from bot1..bot5 (777001..777005)
+        "side": "watch",         # watch | buy | sell | both
+        "watch_gate": True,      # False = use "side" without the watch dials
+        "watch_min_pct": 60.0,   # dial pressure required to take the trade
+        "ai_gate": True,         # the AI market-direction board also approves the side
+        "tp": 0.0,               # 0 = no take profit
+        "sl": 0.0,               # 0 = 70% profit-lock trail
+        "lock_pct": 70.0,
+        "lock_min_profit": 0.80,
+        "cooldown_sec": 2.0,
+        "slippage_points": 30,
+    },
+    # ---- reversal candle bot: trades the instant a candle reverses
+    #      (see backend/reversal_bot.py) ----
+    "bot7": {
+        "running": False,
+        "lot": 0.01,
+        "symbol": "XAUUSDm",
+        "magic": 777007,          # distinct from bot1..bot6
+        "timeframe": "M1",        # M1 | M5 | M15
+        "reverse_dist": 0.0,      # $ back against the candle; 0 = its own body
+        "min_body": 0.0,          # $ the closed candle must have moved
+        "tp": 0.0,                # 0 = no take profit
+        "sl": 0.0,                # 0 = 70% profit-lock trail
+        "lock_pct": 70.0,
+        "lock_min_profit": 0.80,
+        "watch_gate": True,
+        "watch_min_pct": 60.0,
+        "ai_gate": True,          # the AI market-direction board also approves the side
+        "max_trades": 1,
+        "cooldown_sec": 3.0,
+        "slippage_points": 30,
     },
 }
 
@@ -166,17 +253,33 @@ def load_config() -> Dict[str, Any]:
     return cfg
 
 
+# one writer at a time: update_config() is called from the engine thread and
+# from FastAPI request handlers, so the read-modify-write below must be atomic
+_CONFIG_LOCK = threading.Lock()
+
+
 def save_config(cfg: Dict[str, Any]) -> None:
     _ensure_dirs()
-    tmp = CONFIG_FILE.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    os.replace(tmp, CONFIG_FILE)
+    # unique temp file per write: two concurrent writers each get their own tmp
+    # and the final os.replace is atomic, so config.json is never truncated
+    fd, tmp_name = tempfile.mkstemp(prefix="config.", suffix=".json.tmp", dir=str(CONFIG_DIR))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=2)
+        os.replace(tmp_name, CONFIG_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 CONFIG: Dict[str, Any] = load_config()
 
 
 def update_config(**kwargs: Any) -> Dict[str, Any]:
-    CONFIG.update(kwargs)
-    save_config(CONFIG)
-    return CONFIG
+    with _CONFIG_LOCK:
+        CONFIG.update(kwargs)
+        save_config(CONFIG)
+        return dict(CONFIG)

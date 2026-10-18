@@ -6,11 +6,13 @@ Run:  python tests/run_tests.py
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import tempfile
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Dict, List
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -304,6 +306,14 @@ check("history rows tagged", all(t.get("account") == "12345678" for t in snap["h
 check("history_total scoped to account", snap.get("history_total") == 2, snap.get("history_total"))
 check("server clock string", len(snap.get("server_time", "")) == 19, snap.get("server_time"))
 check("publisher received data", len(sent) > 0, len(sent))
+check("bot6 exposed in the snapshot", isinstance(snap.get("bot6"), dict) and "config" in snap["bot6"],
+      list((snap.get("bot6") or {}).keys())[:6])
+check("bot7 exposed in the snapshot", isinstance(snap.get("bot7"), dict) and "config" in snap["bot7"],
+      list((snap.get("bot7") or {}).keys())[:6])
+check("bot6 has its own magic", (snap.get("bot6") or {}).get("config", {}).get("magic") == 777006,
+      (snap.get("bot6") or {}).get("config", {}).get("magic"))
+check("bot7 has its own magic", (snap.get("bot7") or {}).get("config", {}).get("magic") == 777007,
+      (snap.get("bot7") or {}).get("config", {}).get("magic"))
 
 # another account's trades must never leak into this session
 store2.upsert_trades([{"position_id": "999", "symbol": "GBPUSDm", "net_profit": 500.0,
@@ -360,7 +370,8 @@ check("no simulator module", not (ROOT / "backend" / "engine_sim.py").exists())
 check("engine has no demo branch", not hasattr(eng, "sim"))
 import backend.app as backend_app  # noqa: E402
 src = (ROOT / "backend" / "app.py").read_text(encoding="utf-8")
-check("api/connect has no demo mode", 'mode == "live"' not in src and '"demo"' not in src.replace('"demo"', '', 0) or 'mode' not in src)
+check("api/connect validates the login", "Exness account login din" in src)
+check("api/connect never consults a simulator", "engine_sim" not in src and "sim" != getattr(backend_app.engine, "mode", ""))
 html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
 check("no demo button in the UI", "demo-btn" not in html and "start-demo" not in html)
 js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
@@ -928,9 +939,11 @@ check("TP reached auto-closes trade at profit >= $0.10", any(c[0] == 10 and "TP 
 check("SL hit auto-closes trade at loss <= -$2.00", any(c[0] == 11 and "SL hit" in c[1] for c in closed_calls), closed_calls)
 check("Normal trade not closed", not any(c[0] == 12 for c in closed_calls))
 
-# Candle counter-flow direction checks (down -> buy, up -> sell)
+# WATCH OFF: candle-follow direction checks (down -> sell, up -> buy)
 tbot._last_order_ts = 0
 tbot.cfg["max_trades"] = 1
+tbot.cfg["watch_enabled"] = False
+tbot.cfg["trend_mode"] = False
 tbot.compute_structure = lambda sym: {"d1": {}, "w1": {}}
 tbot._digits = lambda sym: 2
 tbot._point = lambda sym: 0.01
@@ -946,13 +959,31 @@ tbmod.mt5.copy_rates_from_pos.return_value = [{"open": 83050.0, "time": 17000000
 candle_called = []
 tbot._open_market_trade = lambda side, comment: candle_called.append((side, comment))
 tbot._check_and_trade([])
-check("candle down enters BUY (counter-flow)", any(c[0] == "buy" and "candle_down_buy" in c[1] for c in candle_called), candle_called)
+check("watch OFF: candle down enters SELL (follow)", any(c[0] == "sell" and "candle_down_sell" in c[1] for c in candle_called), candle_called)
 
 candle_called.clear()
 tbot._last_order_ts = 0
 tbmod.mt5.copy_rates_from_pos.return_value = [{"open": 82900.0, "time": 1700000000}]  # UP (current ~82995 > open 82900)
 tbot._check_and_trade([])
-check("candle up enters SELL (counter-flow)", any(c[0] == "sell" and "candle_up_sell" in c[1] for c in candle_called), candle_called)
+check("watch OFF: candle up enters BUY (follow)", any(c[0] == "buy" and "candle_up_buy" in c[1] for c in candle_called), candle_called)
+
+# Watch % field is authoritative + Reverse flips the real order side
+import time as _t
+tbot.cfg["watch_enabled"] = True
+tbot.cfg["trend_mode"] = True
+tbot.cfg["watch_min_pct"] = 70.0
+tbot._watch_provider = lambda sym: {"buyer_pct": 65.0, "seller_pct": 35.0, "updated_at": _t.time()}
+_w_allowed, _w_reason = tbot._check_watch_threshold("buy")
+check("watch % field blocks 65% when the field says 70%", not _w_allowed, _w_reason)
+tbot.cfg["watch_min_pct"] = 50.0
+_w_allowed, _w_reason = tbot._check_watch_threshold("buy")
+check("watch % field allows 65% when the field says 50%", _w_allowed, _w_reason)
+tbot.cfg["reverse"] = True
+check("reverse flips a BUY decision to SELL", tbot._apply_reverse("buy") == "sell")
+check("reverse flips a SELL decision to BUY", tbot._apply_reverse("sell") == "buy")
+tbot.cfg["reverse"] = False
+tbot.cfg["watch_min_pct"] = 60.0
+tbot._watch_provider = None
 
 # Trend Mode testing: "Market er Trand check korbe Timer ja bolbe oi Trand a trade nibe"
 tbot.cfg["trend_mode"] = True
@@ -1066,6 +1097,20 @@ ebot._close_position = lambda p, reason: True
 c3_closed = ebot.close_all("panic")
 check("close_all closes bot3 positions", c3_closed == 1, c3_closed)
 check("close_all stops bot3", ebot.cfg["running"] is False)
+
+print("\n15. unittest suites (news / trend / extreme / pretrade / entry / reversal / sessions / market-ai)")
+import unittest  # noqa: E402
+loader = unittest.TestLoader()
+suite = unittest.TestSuite()
+for mod in ("test_news_bot", "test_trend_bot", "test_extreme_bot", "test_pretrade_bot",
+            "test_entry_bot", "test_reversal_bot", "test_sessions", "test_market_ai"):
+    tests_dir = str(ROOT / "tests")
+    if tests_dir not in sys.path:
+        sys.path.insert(0, tests_dir)
+    suite.addTests(loader.loadTestsFromName(mod))
+runner = unittest.TextTestRunner(verbosity=0, stream=open(os.devnull, "w"))
+result = runner.run(suite)
+check("bot unittest suites pass", result.wasSuccessful(), f"{result.testsRun} tests")
 
 print(f"\n{'=' * 46}\nPASSED {PASS}   FAILED {FAIL}\n{'=' * 46}")
 sys.exit(1 if FAIL else 0)

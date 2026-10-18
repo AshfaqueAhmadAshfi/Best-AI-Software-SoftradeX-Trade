@@ -7,7 +7,8 @@
 //|    Tools > Options > Expert Advisors >                            |
 //|      [x] Allow WebRequest for listed URL                          |
 //|      add  http://127.0.0.1:8777                                   |
-//|    Then paste the BridgeToken shown on the dashboard Connect page.|
+//|    Then paste the BridgeToken printed in the backend console      |
+//|    at startup (same value is in config/config.json: ea_secret).   |
 //+------------------------------------------------------------------+
 #property copyright "Exness Trading Dashboard"
 #property version   "1.00"

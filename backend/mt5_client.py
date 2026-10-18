@@ -14,6 +14,7 @@ Design notes
 from __future__ import annotations
 
 import os
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,6 +24,12 @@ try:
     import MetaTrader5 as mt5  # type: ignore
 except Exception:  # pragma: no cover - only if package missing
     mt5 = None  # type: ignore
+
+# The MT5 IPC bridge is a single pipe into the terminal and is not thread safe.
+# The engine owns one thread, but the watch stream thread and FastAPI handlers
+# also touch the package - every mt5.* call site takes this lock so two calls
+# can never interleave on the wire. RLock so nested helpers stay simple.
+IPC_LOCK = threading.RLock()
 
 # ----------------------------------------------------------------- constants
 DEAL_ENTRY_IN = 0
@@ -48,6 +55,12 @@ _SEARCH_ROOTS = [
 ]
 
 
+def _mt5(fn, *args, **kwargs):
+    """Run a single MetaTrader5 IPC call under the global IPC lock."""
+    with IPC_LOCK:
+        return fn(*args, **kwargs)
+
+
 def package_available() -> bool:
     return mt5 is not None
 
@@ -61,10 +74,37 @@ def _as_dict(obj: Any) -> Dict[str, Any]:
     asdict = getattr(obj, "_asdict", None)
     if callable(asdict):
         return dict(asdict())
+    # numpy structured row (MT5 candles) / slots object: read the real fields;
+    # the old dict(vars(obj)) last resort raised TypeError on a numpy row and
+    # killed the caller's whole tick, so nothing here may raise any more.
+    names = getattr(getattr(obj, "dtype", None), "names", None)
+    if names:
+        out: Dict[str, Any] = {}
+        for n in names:
+            try:
+                out[str(n)] = obj[n]
+            except Exception:
+                continue
+        if out:
+            return out
+    slots = getattr(obj, "__slots__", None) or getattr(obj, "_fields", None)
+    if slots:
+        out = {}
+        for s in slots:
+            try:
+                out[str(s)] = getattr(obj, s)
+            except Exception:
+                continue
+        if out:
+            return out
     try:
         return dict(obj)
     except (TypeError, ValueError):
-        return dict(vars(obj))
+        pass
+    try:
+        return dict(vars(obj))          # plain object carrying a __dict__
+    except TypeError:
+        return {}
 
 
 def package_version() -> str:
@@ -77,6 +117,8 @@ def package_version() -> str:
 # ------------------------------------------------------------ terminal lookup
 _terminal_cache: List[str] = []
 _terminal_cache_ts: float = 0.0
+_full_scan_ts: float = 0.0
+_FULL_SCAN_INTERVAL = 600.0  # the brute-force drive scan is expensive - throttle it
 
 
 def _scan_for_terminals(roots: List[str], max_depth: int = 3) -> List[str]:
@@ -113,9 +155,14 @@ def _scan_for_terminals(roots: List[str], max_depth: int = 3) -> List[str]:
 
 
 def invalidate_terminal_cache() -> None:
-    """Forget the cached terminal scan (used right after a failed login)."""
-    global _terminal_cache_ts
+    """Forget the cached terminal scan (used right after a failed login).
+
+    Also resets the full-scan throttle: a failed login usually means a terminal
+    was just installed or moved, so the next lookup must search the drive again.
+    """
+    global _terminal_cache_ts, _full_scan_ts
     _terminal_cache_ts = 0.0
+    _full_scan_ts = 0.0
 
 
 def has_exness_terminal(terminals: Optional[List[str]] = None) -> bool:
@@ -124,8 +171,14 @@ def has_exness_terminal(terminals: Optional[List[str]] = None) -> bool:
 
 
 def find_terminals(force: bool = False) -> List[str]:
-    """Locate every MT5 terminal on the machine (cached for 60 s)."""
-    global _terminal_cache, _terminal_cache_ts
+    """Locate every MT5 terminal on the machine.
+
+    The roaming-folder lookup is cheap and runs whenever the 60 s cache is
+    stale. The brute-force scan of the whole drive only runs when the roaming
+    folder knows nothing AND the last full scan is older than 10 minutes - a
+    single-terminal machine must not pay a multi-second C:\\ scan every minute.
+    """
+    global _terminal_cache, _terminal_cache_ts, _full_scan_ts
     if not force and _terminal_cache and (time.time() - _terminal_cache_ts) < 60:
         return list(_terminal_cache)
 
@@ -151,9 +204,17 @@ def find_terminals(force: bool = False) -> List[str]:
     except OSError:
         pass
 
-    # 2) brute-force shallow scan of the usual install roots
-    if len(found) < 2:
-        found.extend(_scan_for_terminals(_SEARCH_ROOTS, max_depth=3))
+    # 2) brute-force shallow scan of the usual install roots - rare and throttled
+    if not found:
+        if force or (time.time() - _full_scan_ts) >= _FULL_SCAN_INTERVAL:
+            _full_scan_ts = time.time()
+            found.extend(_scan_for_terminals(_SEARCH_ROOTS, max_depth=3))
+        elif _terminal_cache:
+            # the scan is rate-limited and this machine's terminal is only
+            # discoverable through it - keep serving the previous list instead
+            # of letting an empty roaming result blank the cache out
+            _terminal_cache_ts = time.time()
+            return list(_terminal_cache)
 
     # de-dupe, keep order, prefer Exness-branded terminals first
     uniq: List[str] = []
@@ -267,16 +328,16 @@ class MT5Client:
                     kwargs["server"] = str(server)
                 kwargs["timeout"] = timeout_ms
             try:
-                ok = mt5.initialize(**kwargs)
+                ok = _mt5(mt5.initialize, **kwargs)
             except Exception as exc:  # pragma: no cover
                 ok = False
                 last_err = (-1, str(exc))
             if not ok:
-                last_err = mt5.last_error()
+                last_err = _mt5(mt5.last_error)
                 info = self._terminal_info()
                 # If this terminal simply does not know the server, try the next one
                 try:
-                    mt5.shutdown()
+                    _mt5(mt5.shutdown)
                 except Exception:
                     pass
                 if info and info.get("connected") and not path and len(candidates) > 1:
@@ -284,28 +345,37 @@ class MT5Client:
                 continue
 
             # initialize() with credentials usually logs in already; login() is a safety net
-            auth = mt5.account_info()
+            auth = _mt5(mt5.account_info)
+            if auth is not None and login and int(auth.login) != int(login) and not password:
+                # never silently trade the wrong account: without a password we
+                # cannot switch the terminal to the requested login
+                last_err = (-1, "Terminal already logged in as account %s. Enter the password for %s to switch." % (auth.login, login))
+                try:
+                    _mt5(mt5.shutdown)
+                except Exception:
+                    pass
+                continue
             if auth is None or (login and int(auth.login) != int(login)):
                 if password:
-                    if not mt5.login(int(login), password=str(password), server=server or None, timeout=timeout_ms):
-                        last_err = mt5.last_error()
+                    if not _mt5(mt5.login, int(login), password=str(password), server=server or None, timeout=timeout_ms):
+                        last_err = _mt5(mt5.last_error)
                         try:
-                            mt5.shutdown()
+                            _mt5(mt5.shutdown)
                         except Exception:
                             pass
                         continue
-                    auth = mt5.account_info()
+                    auth = _mt5(mt5.account_info)
                 elif auth is None:
-                    last_err = mt5.last_error()
+                    last_err = _mt5(mt5.last_error)
                     try:
-                        mt5.shutdown()
+                        _mt5(mt5.shutdown)
                     except Exception:
                         pass
                     continue
             if auth is None:
-                last_err = mt5.last_error()
+                last_err = _mt5(mt5.last_error)
                 try:
-                    mt5.shutdown()
+                    _mt5(mt5.shutdown)
                 except Exception:
                     pass
                 continue
@@ -322,7 +392,7 @@ class MT5Client:
 
         self.connected = False
         invalidate_terminal_cache()
-        self.last_error = describe_error(last_err or mt5.last_error())
+        self.last_error = describe_error(last_err or _mt5(mt5.last_error))
         # Verified on a real machine: any MetaTrader 5 terminal can log into an
         # Exness account as long as the server name is passed explicitly (MT5
         # resolves it through the global MetaQuotes access-point directory).
@@ -339,7 +409,7 @@ class MT5Client:
         if mt5 is None:
             return
         try:
-            mt5.shutdown()
+            _mt5(mt5.shutdown)
         except Exception:
             pass
 
@@ -349,7 +419,7 @@ class MT5Client:
         if mt5 is None:
             return None
         try:
-            ti = mt5.terminal_info()
+            ti = _mt5(mt5.terminal_info)
         except Exception:
             return None
         if ti is None:
@@ -366,18 +436,23 @@ class MT5Client:
         return ""
 
     # --------------------------------------------------------------- clock
-    def _calibrate_clock(self) -> None:
-        """Estimate server_epoch - local_epoch from a fresh quote."""
+    def _calibrate_clock(self, max_symbols: int = 60) -> None:
+        """Estimate server_epoch - local_epoch from a fresh quote.
+
+        Only quote timestamps may define the offset: a position's last-update
+        time would rewind the clock every poll while a trade sits untouched.
+        """
         if mt5 is None:
             return
+        local_arrival = time.time()
         best: Optional[int] = None
         try:
-            symbols = mt5.symbols_get()
+            symbols = _mt5(mt5.symbols_get)
         except Exception:
             symbols = None
         names: List[str] = []
         if symbols:
-            for s in list(symbols)[:60]:
+            for s in list(symbols)[:max_symbols]:
                 try:
                     if getattr(s, "visible", False):
                         names.append(s.name)
@@ -385,19 +460,33 @@ class MT5Client:
                     continue
         if not names:
             names = ["EURUSD", "XAUUSDm", "XAUUSD", "GBPUSD", "USDJPY"]
-        for name in names[:60]:
+        for name in names[:max_symbols]:
             try:
-                tick = mt5.symbol_info_tick(name)
+                tick = _mt5(mt5.symbol_info_tick, name)
             except Exception:
                 continue
             if tick and tick.time:
                 if best is None or tick.time > best:
                     best = int(tick.time)
         if best:
-            off = best - time.time()
+            off = best - local_arrival
             if abs(off) < 26 * 3600:
                 self._time_offset = off
                 self._offset_locked = True
+
+    _RECALIBRATE_INTERVAL = 900.0  # quote drift check twice an hour is plenty
+
+    def _maybe_recalibrate(self) -> None:
+        if mt5 is None or not self.connected:
+            return
+        now = time.time()
+        if now - getattr(self, "_last_calib_ts", 0.0) < self._RECALIBRATE_INTERVAL:
+            return
+        self._last_calib_ts = now
+        try:
+            self._calibrate_clock(max_symbols=12)
+        except Exception:
+            pass
 
     def server_now(self) -> float:
         return time.time() + self._time_offset
@@ -410,7 +499,7 @@ class MT5Client:
         if mt5 is None or not self.connected:
             return None
         try:
-            ai = mt5.account_info()
+            ai = _mt5(mt5.account_info)
         except Exception:
             return None
         if ai is None:
@@ -422,26 +511,19 @@ class MT5Client:
             "trade_mode", "trade_allowed", "trade_expert", "company",
         ]
         out = {k: d.get(k) for k in keys if k in d}
-        try:
-            self._maybe_refresh_offset(d.get("login"))
-        except Exception:
-            pass
+        self._maybe_recalibrate()
         return out
-
-    def _maybe_refresh_offset(self, _login: Any) -> None:
-        pass  # kept for symmetry; calibration happens on connect
 
     def positions(self) -> List[Dict[str, Any]]:
         if mt5 is None or not self.connected:
             return []
         try:
-            pos = mt5.positions_get()
+            pos = _mt5(mt5.positions_get)
         except Exception:
             return []
         if not pos:
             return []
         out: List[Dict[str, Any]] = []
-        newest = 0
         for p in pos:
             d = _as_dict(p)
             d["side"] = "buy" if int(d.get("type", 0)) == POSITION_TYPE_BUY else "sell"
@@ -449,13 +531,10 @@ class MT5Client:
             d["swap"] = float(d.get("swap") or 0.0)
             d["net"] = round(d["profit"] + d["swap"], 2)
             d["volume"] = float(d.get("volume") or 0.0)
-            newest = max(newest, int(d.get("time_update") or d.get("time") or 0))
             out.append(d)
-        # refresh the clock estimate when we can see a live position timestamp
-        if newest:
-            off = newest - time.time()
-            if abs(off) < 26 * 3600:
-                self._time_offset = off
+        # NOTE: position timestamps are deliberately NOT used to adjust the
+        # clock - an untouched position would drag server_now() backwards
+        # forever. See _calibrate_clock / _maybe_recalibrate.
         out.sort(key=lambda x: (x.get("symbol") or "", x.get("ticket") or 0))
         return out
 
@@ -463,7 +542,7 @@ class MT5Client:
         if mt5 is None or not self.connected:
             return None
         try:
-            tick = mt5.symbol_info_tick(symbol)
+            tick = _mt5(mt5.symbol_info_tick, symbol)
         except Exception:
             return None
         if not tick:
@@ -475,7 +554,7 @@ class MT5Client:
         if mt5 is None or not self.connected:
             return []
         try:
-            raw = mt5.orders_get()
+            raw = _mt5(mt5.orders_get)
         except Exception:
             return []
         if not raw:
@@ -503,7 +582,7 @@ class MT5Client:
         date_from = now - timedelta(days=max(days, 0.25))
         date_to = now + timedelta(days=2)
         try:
-            deals = mt5.history_deals_get(date_from, date_to)
+            deals = _mt5(mt5.history_deals_get, date_from, date_to)
         except Exception:
             deals = None
         if not deals:
@@ -541,6 +620,7 @@ class MT5Client:
                     "side": "",
                     "source": "mt5",
                     "ticket_in": 0,
+                    "_pv": 0.0,  # sum(price * volume) over entry deals
                 }
                 groups[pid] = g
             entry = int(dd.get("entry", -1))
@@ -552,8 +632,10 @@ class MT5Client:
                 g["comment"] = dd["comment"]
             if entry == DEAL_ENTRY_IN:
                 g["volume"] += vol
-                g["open_time"] = int(dd.get("time") or 0)
-                g["open_price"] = float(dd.get("price") or 0.0)
+                t_in = int(dd.get("time") or 0)
+                if not g["open_time"] or (t_in and t_in < g["open_time"]):
+                    g["open_time"] = t_in
+                g["_pv"] += float(dd.get("price") or 0.0) * vol
                 g["side"] = "buy" if dtype == DEAL_TYPE_BUY else "sell"
                 g["ticket_in"] = int(dd.get("ticket") or 0)
             elif entry in (DEAL_ENTRY_OUT, DEAL_ENTRY_INOUT, DEAL_ENTRY_OUT_BY):
@@ -574,6 +656,10 @@ class MT5Client:
                 continue  # still open
             if g["volume"] > 0 and g["close_volume"] + 1e-9 < g["volume"]:
                 continue  # partially closed -> keep tracking as open
+            # scale-ins: report the volume-weighted average entry price, not
+            # the price of whichever entry deal happened to come last
+            if g["volume"] > 0:
+                g["open_price"] = g["_pv"] / g["volume"]
             g["net_profit"] = round(g["profit"] + g["commission"] + g["swap"], 5)
             g["profit"] = round(g["profit"], 5)
             g["commission"] = round(g["commission"], 5)
