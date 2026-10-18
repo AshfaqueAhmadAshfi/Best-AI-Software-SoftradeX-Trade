@@ -287,15 +287,62 @@
             </div>
           </div>
 
-          <!-- Right: Authentic SoftradeX Order Book & Live Trades Sidebar -->
+          <!-- Right: Authentic SoftradeX Whales Terminal & Order Book Sidebar -->
           <div class="binance-book-sidebar">
             <div class="b-side-header">
-              <button type="button" class="b-side-tab active" id="b-tab-depth">Order Book</button>
-              <button type="button" class="b-side-tab" id="b-tab-trades">Recent Trades</button>
+              <button type="button" class="b-side-tab active" id="b-tab-whales">WHALES 🐋</button>
+              <button type="button" class="b-side-tab" id="b-tab-depth">ORDER BOOK</button>
+              <button type="button" class="b-side-tab" id="b-tab-trades">RECENT TRADES</button>
             </div>
             
-            <!-- Order Book View -->
-            <div class="b-depth-container" id="b-depth-container">
+            <!-- 1. WHALES ORDER FLOW TERMINAL (Image 1) -->
+            <div class="b-whales-container" id="b-whales-container">
+              <div class="traders-terminal-panel" id="traders-terminal-panel">
+                <!-- Filter tabs & Volume split meter -->
+                <div class="tt-subbar">
+                  <div class="tt-filters">
+                    <button type="button" class="tt-filter-btn" data-filter="all">ALL</button>
+                    <button type="button" class="tt-filter-btn" data-filter="buy">BUYS</button>
+                    <button type="button" class="tt-filter-btn" data-filter="sell">SELLS</button>
+                    <button type="button" class="tt-filter-btn active" data-filter="whale">WHALES 🐋</button>
+                  </div>
+                  <div class="tt-meter-wrap" title="Buyer vs Seller Volume Split">
+                    <div class="tt-meter-bar">
+                      <div class="tt-meter-buy" id="tt-meter-buy" style="width: 50%;"></div>
+                      <div class="tt-meter-sell" id="tt-meter-sell" style="width: 50%;"></div>
+                    </div>
+                  </div>
+                  <div class="tt-controls">
+                    <button type="button" class="tt-ctrl-btn" id="tt-pause-btn" title="Pause / Resume Live Tape">⏸</button>
+                    <button type="button" class="tt-ctrl-btn" id="tt-clear-btn" title="Clear Tape">🗑</button>
+                  </div>
+                </div>
+
+                <!-- Terminal Columns Header -->
+                <div class="tt-columns-head">
+                  <span class="tt-col-time">TIME</span>
+                  <span class="tt-col-side">SIDE</span>
+                  <span class="tt-col-price">PRICE</span>
+                  <span class="tt-col-amount">SIZE</span>
+                  <span class="tt-col-total">TOTAL ($)</span>
+                  <span class="tt-col-trader">TRADER / ROUTE</span>
+                </div>
+
+                <!-- Live Scrolling Trades Tape -->
+                <div class="tt-tape-body" id="tt-tape-body">
+                  <!-- Dynamically populated live trades -->
+                </div>
+
+                <!-- Terminal Footer Summary -->
+                <div class="tt-footer">
+                  <span class="tt-foot-info"><span class="tt-foot-dot"></span> <span id="tt-status-text">Connected to SoftradeX Global Tape · Live WebSocket</span></span>
+                  <span class="tt-foot-total" id="tt-foot-net-delta">DELTA: <b class="neg">-$0</b></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Order Book View (Image 2) -->
+            <div class="b-depth-container" id="b-depth-container" style="display: none;">
               <div class="b-depth-cols">
                 <span>Price</span>
                 <span>Size</span>
@@ -309,7 +356,7 @@
               <div class="b-depth-bids" id="b-depth-bids"></div>
             </div>
 
-            <!-- Recent Trades View -->
+            <!-- 3. Recent Trades View -->
             <div class="b-trades-container" id="b-trades-container" style="display: none;">
               <div class="b-trades-cols">
                 <span>Price</span>
@@ -504,72 +551,6 @@
               <span class="fc-sub" id="flow-curve-sub" data-i18n="flowCurveSub">selected market · tick by tick</span>
             </div>
             <div class="flow-curve-box" id="flow-curve-box"></div>
-
-            <!-- ================= LIVE TRADERS ORDER FLOW TERMINAL (Connected to 01 Market) ================= -->
-            <div class="traders-terminal-panel" id="traders-terminal-panel">
-              <div class="tt-header">
-                <div class="tt-title-wrap">
-                  <span class="tt-pulse-dot"></span>
-                  <span class="tt-title">TRADERS ORDER FLOW TERMINAL</span>
-                  <span class="tt-conn-badge" id="tt-market-badge" title="Synchronized with Stage 01 Market">🔗 MARKET 01: <b id="tt-connected-symbol">BTCUSDTm</b></span>
-                </div>
-                <div class="tt-stats-bar">
-                  <div class="tt-stat-chip tt-buy-vol">
-                    <span class="tt-stat-lbl">BUY VOL</span>
-                    <b id="tt-buy-vol-val">50% ($0)</b>
-                  </div>
-                  <div class="tt-stat-chip tt-sell-vol">
-                    <span class="tt-stat-lbl">SELL VOL</span>
-                    <b id="tt-sell-vol-val">50% ($0)</b>
-                  </div>
-                  <div class="tt-stat-chip tt-speed">
-                    <span class="tt-stat-lbl">SPEED</span>
-                    <b id="tt-speed-val">0.0 tx/s</b>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Filter tabs & Volume split meter -->
-              <div class="tt-subbar">
-                <div class="tt-filters">
-                  <button type="button" class="tt-filter-btn active" data-filter="all">ALL</button>
-                  <button type="button" class="tt-filter-btn" data-filter="buy">BUYS</button>
-                  <button type="button" class="tt-filter-btn" data-filter="sell">SELLS</button>
-                  <button type="button" class="tt-filter-btn" data-filter="whale">WHALES 🐋</button>
-                </div>
-                <div class="tt-meter-wrap" title="Buyer vs Seller Volume Split">
-                  <div class="tt-meter-bar">
-                    <div class="tt-meter-buy" id="tt-meter-buy" style="width: 50%;"></div>
-                    <div class="tt-meter-sell" id="tt-meter-sell" style="width: 50%;"></div>
-                  </div>
-                </div>
-                <div class="tt-controls">
-                  <button type="button" class="tt-ctrl-btn" id="tt-pause-btn" title="Pause / Resume Live Tape">⏸</button>
-                  <button type="button" class="tt-ctrl-btn" id="tt-clear-btn" title="Clear Tape">🗑</button>
-                </div>
-              </div>
-
-              <!-- Terminal Columns Header -->
-              <div class="tt-columns-head">
-                <span class="tt-col-time">TIME</span>
-                <span class="tt-col-side">SIDE</span>
-                <span class="tt-col-price">PRICE</span>
-                <span class="tt-col-amount">SIZE</span>
-                <span class="tt-col-total">TOTAL ($)</span>
-                <span class="tt-col-trader">TRADER / ROUTE</span>
-              </div>
-
-              <!-- Live Scrolling Trades Tape -->
-              <div class="tt-tape-body" id="tt-tape-body">
-                <!-- Dynamically populated live trades -->
-              </div>
-
-              <!-- Terminal Footer Summary -->
-              <div class="tt-footer">
-                <span class="tt-foot-info"><span class="tt-foot-dot"></span> <span id="tt-status-text">Connected to Market 01 feed · 0ms latency</span></span>
-                <span class="tt-foot-total" id="tt-foot-net-delta">DELTA: <b class="pos">+$0</b></span>
-              </div>
-            </div>
           </div>
         </div>
 

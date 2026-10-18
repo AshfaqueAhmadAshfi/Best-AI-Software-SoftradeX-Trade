@@ -28,7 +28,7 @@
   let tickerData = { price: 0, change: 0, high: 0, low: 0, vol: 0, prevPrice: 0 };
   let orderBook = { asks: [], bids: [] };
   let recentTrades = [];
-  let activeSideTab = 'depth'; // 'depth' or 'trades'
+  let activeSideTab = 'whales'; // 'whales', 'depth', 'trades'
   let ws = null;
   let wsReconnectTimer = null;
   let canvas = null;
@@ -1177,6 +1177,11 @@
     fetchBinanceTicker(currentSymbol);
     fetchBinanceDepth(currentSymbol);
     connectWebSocket(currentSymbol, currentInterval);
+
+    // Sync Traders Whales Order Flow Terminal if present
+    if (window.TradersTerminal && typeof window.TradersTerminal.switchMarket === 'function') {
+      window.TradersTerminal.switchMarket(symbol);
+    }
   }
 
   // --- Switch Timeframe Interval ---
@@ -1422,31 +1427,31 @@
       });
     }
 
-    // Sidebar View Toggle (Depth vs Trades)
+    // Sidebar View Toggle (Whales vs Depth vs Trades)
+    const tabWhales = $('b-tab-whales');
     const tabDepth = $('b-tab-depth');
     const tabTrades = $('b-tab-trades');
+    const viewWhales = $('b-whales-container');
     const viewDepth = $('b-depth-container');
     const viewTrades = $('b-trades-container');
 
-    if (tabDepth && tabTrades) {
-      tabDepth.addEventListener('click', () => {
-        activeSideTab = 'depth';
-        tabDepth.classList.add('active');
-        tabTrades.classList.remove('active');
-        if (viewDepth) viewDepth.style.display = 'flex';
-        if (viewTrades) viewTrades.style.display = 'none';
-        renderOrderBook();
-      });
+    function setActiveSideTab(tab) {
+      activeSideTab = tab;
+      if (tabWhales) tabWhales.classList.toggle('active', tab === 'whales');
+      if (tabDepth) tabDepth.classList.toggle('active', tab === 'depth');
+      if (tabTrades) tabTrades.classList.toggle('active', tab === 'trades');
 
-      tabTrades.addEventListener('click', () => {
-        activeSideTab = 'trades';
-        tabTrades.classList.add('active');
-        tabDepth.classList.remove('active');
-        if (viewDepth) viewDepth.style.display = 'none';
-        if (viewTrades) viewTrades.style.display = 'flex';
-        renderRecentTrades();
-      });
+      if (viewWhales) viewWhales.style.display = tab === 'whales' ? 'flex' : 'none';
+      if (viewDepth) viewDepth.style.display = tab === 'depth' ? 'flex' : 'none';
+      if (viewTrades) viewTrades.style.display = tab === 'trades' ? 'flex' : 'none';
+
+      if (tab === 'depth') renderOrderBook();
+      if (tab === 'trades') renderRecentTrades();
     }
+
+    if (tabWhales) tabWhales.addEventListener('click', () => setActiveSideTab('whales'));
+    if (tabDepth) tabDepth.addEventListener('click', () => setActiveSideTab('depth'));
+    if (tabTrades) tabTrades.addEventListener('click', () => setActiveSideTab('trades'));
 
     // Terminal Collapse / Expand Toggle
     const toggleBtn = $('binance-term-toggle');

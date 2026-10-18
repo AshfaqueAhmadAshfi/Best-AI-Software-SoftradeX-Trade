@@ -9,10 +9,14 @@
   // --- Configuration & Market Parameters ---
   const MARKET_PROFILES = {
     'BTC': { baseAsset: 'BTC', quote: 'USDT', decimals: 2, minQty: 0.005, maxQty: 3.5, unit: 'BTC', binancePair: 'btcusdt' },
+    'BTCUSDT': { baseAsset: 'BTC', quote: 'USDT', decimals: 2, minQty: 0.005, maxQty: 3.5, unit: 'BTC', binancePair: 'btcusdt' },
     'ETH': { baseAsset: 'ETH', quote: 'USDT', decimals: 2, minQty: 0.1, maxQty: 25.0, unit: 'ETH', binancePair: 'ethusdt' },
+    'ETHUSDT': { baseAsset: 'ETH', quote: 'USDT', decimals: 2, minQty: 0.1, maxQty: 25.0, unit: 'ETH', binancePair: 'ethusdt' },
     'SOL': { baseAsset: 'SOL', quote: 'USDT', decimals: 2, minQty: 1.0, maxQty: 180.0, unit: 'SOL', binancePair: 'solusdt' },
     'XAU': { baseAsset: 'GOLD', quote: 'USD', decimals: 2, minQty: 0.5, maxQty: 45.0, unit: 'oz', binancePair: 'paxgusdt' },
     'GOLD': { baseAsset: 'GOLD', quote: 'USD', decimals: 2, minQty: 0.5, maxQty: 45.0, unit: 'oz', binancePair: 'paxgusdt' },
+    'PAXG': { baseAsset: 'GOLD', quote: 'USD', decimals: 2, minQty: 0.5, maxQty: 45.0, unit: 'oz', binancePair: 'paxgusdt' },
+    'PAXGUSDT': { baseAsset: 'GOLD', quote: 'USD', decimals: 2, minQty: 0.5, maxQty: 45.0, unit: 'oz', binancePair: 'paxgusdt' },
     'EUR': { baseAsset: 'EUR', quote: 'USD', decimals: 5, minQty: 0.1, maxQty: 15.0, unit: 'Lots', binancePair: null },
     'GBP': { baseAsset: 'GBP', quote: 'USD', decimals: 5, minQty: 0.1, maxQty: 12.0, unit: 'Lots', binancePair: null },
     'JPY': { baseAsset: 'USD', quote: 'JPY', decimals: 3, minQty: 0.1, maxQty: 15.0, unit: 'Lots', binancePair: null },
@@ -31,7 +35,7 @@
   let activeSymbol = '';
   let ws = null;
   let wsReconnectTimer = null;
-  let activeFilter = 'all'; // 'all' | 'buy' | 'sell' | 'whale'
+  let activeFilter = 'whale'; // 'all' | 'buy' | 'sell' | 'whale'
   let isPaused = false;
   let trades = [];
   let tradeTimestamps = []; // for speed calculation (last 3 sec)
@@ -90,6 +94,14 @@
 
   // --- Get current Market 01 Symbol ---
   function getMarket01Symbol() {
+    if (window.SoftradeXTerminal && typeof window.SoftradeXTerminal.getCurrentSymbol === 'function') {
+      const s = window.SoftradeXTerminal.getCurrentSymbol();
+      if (s) return s;
+    }
+    if (window.BinanceTerminal && typeof window.BinanceTerminal.getCurrentSymbol === 'function') {
+      const s = window.BinanceTerminal.getCurrentSymbol();
+      if (s) return s;
+    }
     if (typeof window.flowSymbol === 'function') {
       const s = window.flowSymbol();
       if (s) return s;
@@ -98,7 +110,7 @@
     if (sel && sel.value) return sel.value;
     const lbl = $('flow-symbol-label');
     if (lbl && lbl.textContent && lbl.textContent !== '—') return lbl.textContent.trim();
-    return 'BTCUSDTm';
+    return 'PAXGUSDT';
   }
 
   // --- Add a Live Trade to Tape ---
@@ -160,7 +172,7 @@
         <span class="tt-side-badge ${sideClass}">${isBuy ? '▲ BUY' : '▼ SELL'}</span>
       </span>
       <span class="tt-cell-price ${sideClass}">${formatNum(trade.price, trade.decimals)}</span>
-      <span class="tt-cell-amount">${trade.isWhale ? '🐋 ' : ''}${formatNum(trade.amount, trade.decimals <= 2 ? 4 : 2)} <i class="tt-unit">${trade.unit}</i></span>
+      <span class="tt-cell-amount">${trade.isWhale ? '🐳 ' : ''}${formatNum(trade.amount, trade.decimals <= 2 ? 4 : 2)} <i class="tt-unit">${trade.unit}</i></span>
       <span class="tt-cell-total">${formatMoney(trade.value)}</span>
       <span class="tt-cell-trader" title="${trade.trader}">${trade.isOurAccount ? '★ OUR ACCOUNT' : trade.trader}</span>
     `;
@@ -371,6 +383,45 @@
     }
   }
 
+  function seedInitialWhales(sym, prof) {
+    const sUpper = sym.toUpperCase();
+    const isBtc = sUpper.includes('BTC');
+    const isGold = sUpper.includes('PAXG') || sUpper.includes('GOLD') || sUpper.includes('XAU');
+    const baseP = isBtc ? 80860.0 : (isGold ? 4147.37 : 2650.0);
+    const dec = prof.decimals || 2;
+    const unit = prof.unit || (isBtc ? 'BTC' : (isGold ? 'oz' : 'Lots'));
+    const now = new Date();
+
+    const seedData = isBtc ? [
+      { offsetSec: 0, side: 'SELL', price: 80860.91, amount: 0.5000, value: 40430, trader: 'Grid Master' },
+      { offsetSec: 28, side: 'SELL', price: 80847.77, amount: 0.5327, value: 43100, trader: 'Jump-Algo #2' },
+      { offsetSec: 28, side: 'SELL', price: 80850.00, amount: 0.6638, value: 53700, trader: 'Institutional LP' },
+      { offsetSec: 28, side: 'SELL', price: 80869.83, amount: 1.7474, value: 141300, trader: 'Citadel-Desk' }
+    ] : [
+      { offsetSec: 0, side: 'SELL', price: +(baseP + 0.31).toFixed(dec), amount: 3.1447, value: 13040, trader: 'Institutional LP' },
+      { offsetSec: 12, side: 'SELL', price: +baseP.toFixed(dec), amount: 5.7281, value: 23760, trader: 'Jump-Algo #2' },
+      { offsetSec: 18, side: 'BUY', price: +(baseP - 0.01).toFixed(dec), amount: 1.0418, value: 4320, trader: 'Grid Master' },
+      { offsetSec: 24, side: 'BUY', price: +(baseP - 0.26).toFixed(dec), amount: 3.6214, value: 15020, trader: 'Citadel-Desk' }
+    ];
+
+    seedData.forEach(s => {
+      const d = new Date(now.getTime() - s.offsetSec * 1000);
+      addTrade({
+        id: Date.now() - s.offsetSec * 1000 + Math.random(),
+        time: formatTime(d),
+        side: s.side,
+        price: s.price,
+        amount: s.amount,
+        value: s.value,
+        unit,
+        decimals: dec,
+        trader: s.trader,
+        isWhale: true,
+        isOurAccount: false
+      });
+    });
+  }
+
   // --- Switch Connected Market ---
   function switchMarket(newSym) {
     if (!newSym) return;
@@ -385,7 +436,7 @@
     if (badgeSym) badgeSym.textContent = cleanSym.toUpperCase();
 
     const statText = $('tt-status-text');
-    if (statText) statText.textContent = `Syncing to Market 01: ${cleanSym.toUpperCase()}...`;
+    if (statText) statText.textContent = `Connected to SoftradeX Global Tape · ${cleanSym.toUpperCase()} · Live WebSocket`;
 
     // Reset counts for new market
     trades = [];
@@ -398,13 +449,10 @@
 
     const tapeBody = $('tt-tape-body');
     if (tapeBody) {
-      tapeBody.innerHTML = `
-        <div class="tt-divider-row">
-          <span>⚡ CONNECTED TO MARKET 01: <b>${cleanSym.toUpperCase()}</b> · STREAMING ORDER FLOW</span>
-        </div>
-      `;
+      tapeBody.innerHTML = '';
     }
 
+    seedInitialWhales(cleanSym, prof);
     updateStatsBar();
 
     // Check for Binance pair counterpart
@@ -415,7 +463,7 @@
         try { ws.close(); } catch (e) {}
         ws = null;
       }
-      if (statText) statText.textContent = `Connected to Market 01: ${cleanSym.toUpperCase()} · Exness MT5 Live Liquidity`;
+      if (statText) statText.textContent = `Connected to SoftradeX Global Tape · ${cleanSym.toUpperCase()} · Live WebSocket`;
     }
 
     startSimulatedLiquidity();
