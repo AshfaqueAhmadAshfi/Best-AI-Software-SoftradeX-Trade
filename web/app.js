@@ -971,6 +971,19 @@ function renderHistory(d) {
 let marketWatches = [];
 let marketStatuses = {};
 
+function findWatchForSymbol(sym) {
+  if (!sym || !marketWatches || !marketWatches.length) return null;
+  const sUpper = String(sym).toUpperCase().trim();
+  let w = marketWatches.find(x => String(x.symbol || '').toUpperCase() === sUpper);
+  if (!w) {
+    w = marketWatches.find(x => String(x.symbol || '').toUpperCase().replace(/M$/, '').replace(/\.$/, '') === sUpper.replace(/M$/, '').replace(/\.$/, ''));
+  }
+  if (!w) {
+    w = marketWatches.find(x => String(x.displayName || '').toUpperCase() === sUpper);
+  }
+  return w || marketWatches[0] || null;
+}
+
 function getMarketInfo(sym) {
   if (!sym) return { open: false, status: 'CLOSED', reason: 'EMPTY' };
   const sUpper = String(sym).toUpperCase().trim();
@@ -7114,6 +7127,352 @@ function init3DTiltEngine() {
   setInterval(pollFlowBalanceWorld, 10000);
   // Market Pressure Watch Dials: NO timer. The live WebSocket state snapshot
   // (every engine tick) patches the dials in place. No setInterval needed.
+  /* ==========================================================================
+     ORDER FLOW BRIDGE: 02 MARKET PRESSURE WATCH DIALS
+     Streams live order tape buyer vs seller pressure directly to Stage 05 Dials.
+     ========================================================================== */
+  window.applyOrderFlowToWatchDials = function(stats) {
+    if (!stats) return;
+    const sym = String(stats.symbol || flowSymbol() || 'GOLD').trim();
+    const buyPct = Math.max(1, Math.min(99, Math.round(Number(stats.buyPct) || 50)));
+    const sellPct = 100 - buyPct;
+    // Needle degrees: -65deg is BUY 100%, 0deg is 50/50, +65deg is SELL 100%
+    const needleDeg = Number((((50 - buyPct) / 50) * 65).toFixed(1));
+    const dominant = buyPct >= 55 ? 'BUYER' : (sellPct >= 55 ? 'SELLER' : 'NEUTRAL');
+    const domCls = dominant.toLowerCase();
+    const flow = buyPct > 52 ? 'bullish' : (sellPct > 52 ? 'bearish' : 'sideways');
+
+    // Update in-memory marketWatches item
+    let w = typeof findWatchForSymbol === 'function' ? findWatchForSymbol(sym) : null;
+    if (!w && marketWatches && marketWatches.length > 0) {
+      w = marketWatches[0];
+    }
+    if (w) {
+      w.buyer_pct = buyPct;
+      w.seller_pct = sellPct;
+      w.needle_deg = needleDeg;
+      w.dominant = dominant;
+      w.candle_flow = flow;
+      w.direction = buyPct >= 50 ? 'UP' : 'DOWN';
+      if (stats.lastPrice > 0) {
+        w.ask = stats.lastPrice;
+        w.bid = stats.lastPrice - (w.spread || 0.1);
+      }
+      w.updated_at = Date.now() / 1000;
+      w.live = true;
+    }
+
+    // Direct DOM Patch for instantaneous 60fps needle, VU-meter, and pressure readouts
+    const grid = $('market-watch-grid');
+    if (grid) {
+      const card = grid.querySelector('.watch-card');
+      if (card) {
+        // 1. Rotate Needle
+        const wrap = card.querySelector('.watch-hand-wrap');
+        if (wrap) wrap.style.transform = `rotate(${needleDeg}deg)`;
+        const lance = card.querySelector('.watch-hand-lance');
+        if (lance) lance.className = `watch-hand-lance ${domCls}`;
+
+        // 2. Annunciator Lamp & Text
+        const ann = card.querySelector('.watch-annunciator');
+        const annTxt = card.querySelector('.annunciator-text');
+        if (ann) ann.className = `watch-annunciator ${domCls}`;
+        if (annTxt) {
+          annTxt.textContent = buyPct >= 72
+            ? (LANG === 'bn' ? 'তীব্র বায়ার চাপ (BUY FLOW)' : 'STRONG BUYER FLOW')
+            : (buyPct >= 55
+              ? (LANG === 'bn' ? `বায়ার চাপ ${buyPct}%` : `BUYER PRESSURE ${buyPct}%`)
+              : (sellPct >= 72
+                ? (LANG === 'bn' ? 'তীব্র সেলার চাপ (SELL FLOW)' : 'STRONG SELLER FLOW')
+                : (sellPct >= 55
+                  ? (LANG === 'bn' ? `সেলার চাপ ${sellPct}%` : `SELLER PRESSURE ${sellPct}%`)
+                  : (LANG === 'bn' ? 'অর্ডার ফ্লো ব্যালান্সড ৫০%' : 'ORDER FLOW BALANCED 50%'))));
+        }
+
+        // 3. Live Price Display
+        if (stats.lastPrice > 0) {
+          const priceEl = card.querySelector('.watch-price-display');
+          if (priceEl) priceEl.textContent = Number(stats.lastPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const bidEl = card.querySelector('.spec-bid');
+          if (bidEl) bidEl.textContent = Number(stats.lastPrice).toFixed(2);
+        }
+
+        // 4. Pressure Split Header Labels
+        const buyLabel = card.querySelector('.pressure-label.buyer b');
+        const sellLabel = card.querySelector('.pressure-label.seller b');
+        if (buyLabel) buyLabel.textContent = `${buyPct}%`;
+        if (sellLabel) sellLabel.textContent = `${sellPct}%`;
+
+        // 5. Dual 16-Segment LED VU-Meter
+        const rack = card.querySelector('.vu-meter-rack');
+        if (rack) {
+          rack.title = `Buyer: ${buyPct}% · Seller: ${sellPct}%`;
+          if (typeof patchVuSegments === 'function') {
+            patchVuSegments(rack.querySelector('.vu-buy'), buyPct, 'buy');
+            patchVuSegments(rack.querySelector('.vu-sell'), sellPct, 'sell');
+          }
+        }
+
+        // 6. Big Buyer vs Seller Readout Box
+        const bBig = card.querySelector('.wpb-buyer .wpb-val');
+        const sBig = card.querySelector('.wpb-seller .wpb-val');
+        if (bBig) bBig.textContent = `${buyPct}%`;
+        if (sBig) sBig.textContent = `${sellPct}%`;
+
+        const bigRack = card.querySelector('.watch-pressure-bigrack');
+        if (bigRack) {
+          bigRack.title = `Buyer: ${buyPct}% · Seller: ${sellPct}%`;
+          bigRack.classList.toggle('buyer-lead', dominant === 'BUYER');
+          bigRack.classList.toggle('seller-lead', dominant === 'SELLER');
+        }
+
+        // 7. Direction and Flow Specs
+        const flowEl = card.querySelector('.spec-flow');
+        if (flowEl) {
+          const arrow = buyPct >= 50 ? '▲' : '▼';
+          flowEl.className = `spec-v flow-val spec-flow ${flow}`;
+          flowEl.textContent = `${arrow} ${flow.toUpperCase()}`;
+        }
+        const dirEl = card.querySelector('.spec-direction');
+        if (dirEl) {
+          const dir = buyPct >= 50 ? 'UP' : 'DOWN';
+          dirEl.className = `spec-v spec-direction ${dir.toLowerCase()}`;
+          dirEl.textContent = `${dir === 'UP' ? '▲' : '▼'} ${dir}`;
+        }
+
+        // 8. Live Clock on Machine Face
+        const clockEl = card.querySelector('.machine-clock');
+        if (clockEl) {
+          clockEl.textContent = watchClockText(Date.now() / 1000);
+          clockEl.classList.remove('sim');
+        }
+      }
+    }
+
+    // 9. Update Summary Pill in Stage 05 Header
+    if (typeof updateWatchSummaryPill === 'function') {
+      try { updateWatchSummaryPill(); } catch (e) {}
+    }
+  };
+
+  /* ==========================================================================
+     ORDER FLOW BRIDGE: 03 FULL AI MARKET ANALYSIS (live BUY / SELL)
+     Feeds real-time execution order flow into AI Market Analysis & computes
+     live Direction (BUY / SELL / BALANCED), Confidence %, Targets, and Timeframes.
+     ========================================================================== */
+  window.applyOrderFlowToAiMarket = function(stats) {
+    if (!stats) return;
+    const sym = String(stats.symbol || flowSymbol() || 'GOLD').trim();
+    const buyPct = Math.max(1, Math.min(99, Math.round(Number(stats.buyPct) || 50)));
+    const sellPct = 100 - buyPct;
+    const price = Number(stats.lastPrice) > 0 ? Number(stats.lastPrice) : 4168.20;
+    const digits = sym.includes('EUR') || sym.includes('GBP') ? 5 : (sym.includes('JPY') ? 3 : 2);
+
+    // Compute live Direction & Confidence from order flow tape
+    let verdict = 'BALANCED';
+    let sideClass = 'mixed';
+    let arrow = '◆';
+    let sideText = LANG === 'bn' ? 'ব্যালান্সড (অপেক্ষা করুন)' : 'BALANCED (WAIT)';
+    let confidence = 50;
+
+    if (buyPct >= 65) {
+      verdict = buyPct >= 75 ? 'STRONG_BUY' : 'BUY';
+      sideClass = 'buy';
+      arrow = '▲';
+      sideText = buyPct >= 75
+        ? (LANG === 'bn' ? 'তীব্র বাই (STRONG BUY)' : 'STRONG BUY')
+        : (LANG === 'bn' ? 'বাই (BUY)' : 'BUY');
+      confidence = Math.min(98, Math.max(55, Math.round(buyPct + (Math.abs(stats.netDelta || 0) > 50000 ? 5 : 0))));
+    } else if (sellPct >= 65) {
+      verdict = sellPct >= 75 ? 'STRONG_SELL' : 'SELL';
+      sideClass = 'sell';
+      arrow = '▼';
+      sideText = sellPct >= 75
+        ? (LANG === 'bn' ? 'তীব্র সেল (STRONG SELL)' : 'STRONG SELL')
+        : (LANG === 'bn' ? 'সেল (SELL)' : 'SELL');
+      confidence = Math.min(98, Math.max(55, Math.round(sellPct + (Math.abs(stats.netDelta || 0) > 50000 ? 5 : 0))));
+    } else if (buyPct > 52) {
+      verdict = 'BUY';
+      sideClass = 'buy';
+      arrow = '▲';
+      sideText = LANG === 'bn' ? 'বাই (BUY)' : 'BUY';
+      confidence = Math.round(52 + (buyPct - 50) * 1.6);
+    } else if (sellPct > 52) {
+      verdict = 'SELL';
+      sideClass = 'sell';
+      arrow = '▼';
+      sideText = LANG === 'bn' ? 'সেল (SELL)' : 'SELL';
+      confidence = Math.round(52 + (sellPct - 50) * 1.6);
+    }
+
+    // Dynamic targets & levels
+    const atrEst = price * (sym.includes('BTC') ? 0.008 : 0.0035);
+    const upDist = atrEst * (buyPct / 50);
+    const downDist = atrEst * (sellPct / 50);
+    const upPrice = price + upDist;
+    const downPrice = price - downDist;
+    const upMoney = upDist * 10;
+    const downMoney = -downDist * 10;
+    const levelUp = price + (atrEst * 1.65);
+    const levelDown = price - (atrEst * 1.65);
+
+    // Update in-memory aiBoard
+    if (!aiBoard) {
+      aiBoard = {
+        symbol: sym,
+        timeframe: 'M5',
+        price: price,
+        digits: digits,
+        source: 'order_flow',
+        updated: Date.now() / 1000,
+        combined: {},
+        target: {},
+        rows: []
+      };
+    }
+    aiBoard.symbol = sym;
+    aiBoard.price = price;
+    aiBoard.digits = digits;
+    aiBoard.updated = Date.now() / 1000;
+    aiBoard.combined = {
+      verdict: sideClass === 'buy' ? 'BUY' : (sideClass === 'sell' ? 'SELL' : 'MIXED'),
+      confidence: confidence,
+      reasons: [
+        `Order Flow: ${buyPct}% Buyers / ${sellPct}% Sellers`,
+        `Net Delta: ${stats.netDelta >= 0 ? '+' : ''}$${Math.abs(stats.netDelta || 0).toLocaleString()}`,
+        `Tape Speed: ${stats.speed || '0.0'} tx/s`
+      ]
+    };
+    aiBoard.target = {
+      ready: true,
+      primary_side: sideClass === 'sell' ? 'SELL' : 'BUY',
+      up_price: upPrice,
+      down_price: downPrice,
+      up_money: upMoney,
+      down_money: downMoney,
+      level_up: levelUp,
+      level_down: levelDown
+    };
+
+    // 1. Update #ai-verdict (The prominent one-line AI answer)
+    const verEl = $('ai-verdict');
+    if (verEl) {
+      const deltaSign = (stats.netDelta || 0) >= 0 ? '+' : '';
+      const deltaStr = `${deltaSign}$${Math.abs(stats.netDelta || 0).toLocaleString()}`;
+      verEl.innerHTML = `
+        <span class="ai-side ${sideClass}">${arrow} ${sideText}</span>
+        <b>${confidence}%</b> ${LANG === 'bn' ? 'কনফিডেন্স' : 'Confidence'} · 
+        ${LANG === 'bn' ? 'অর্ডার ফ্লো' : 'Order Flow'} <b>${buyPct}% BUY / ${sellPct}% SELL</b> · 
+        ${LANG === 'bn' ? 'প্রাইস' : 'Price Now'} <b>${price.toFixed(digits)}</b>
+        <span class="ai-why" title="Traders Order Flow Terminal Auto-Analysis">
+          ${LANG === 'bn' ? 'কারণ' : 'Why'}: ${stats.speed} tx/s গতি · ডেল্টা ${deltaStr}
+        </span>
+      `;
+    }
+
+    // 2. Update #ai-targets (Price targets and travel corridors)
+    const tgtEl = $('ai-targets');
+    if (tgtEl) {
+      const upRole = sideClass === 'buy' ? (LANG === 'bn' ? 'টার্গেট' : 'Target') : (LANG === 'bn' ? 'রিস্ক' : 'Risk');
+      const downRole = sideClass === 'sell' ? (LANG === 'bn' ? 'টার্গেট' : 'Target') : (LANG === 'bn' ? 'রিস্ক' : 'Risk');
+      tgtEl.innerHTML = `
+        <span class="ai-target up" title="${LANG === 'bn' ? 'আপ টার্গেট' : 'Up Target'}">
+          <b>▲ ${LANG === 'bn' ? 'আপ' : 'UP'} ${upPrice.toFixed(digits)}</b>
+          <small>+$${Math.abs(upMoney).toFixed(1)} · ${upRole}</small>
+        </span>
+        <span class="ai-target down" title="${LANG === 'bn' ? 'ডাউন টার্গেট' : 'Down Target'}">
+          <b>▼ ${LANG === 'bn' ? 'ডাউন' : 'DOWN'} ${downPrice.toFixed(digits)}</b>
+          <small>-$${Math.abs(downMoney).toFixed(1)} · ${downRole}</small>
+        </span>
+        <span class="ai-target level">
+          <b>${LANG === 'bn' ? 'লেভেলস' : 'Levels'}</b>
+          <small>${levelUp.toFixed(digits)} / ${levelDown.toFixed(digits)}</small>
+        </span>
+      `;
+    }
+
+    // 3. Update #ai-tf-tabs (Timeframe buttons: 1m, 5m, 15m, 1h, 4h, 1Day)
+    const tabs = $('ai-tf-tabs');
+    if (tabs) {
+      const TFS = [
+        { k: 'M1', lbl: '1m', v: sideClass === 'buy' ? 'BUY' : (sideClass === 'sell' ? 'SELL' : 'MIXED') },
+        { k: 'M5', lbl: '5m', v: sideClass === 'buy' ? 'BUY' : (sideClass === 'sell' ? 'SELL' : 'MIXED') },
+        { k: 'M15', lbl: '15m', v: sideClass === 'buy' ? 'BUY' : (sideClass === 'sell' ? 'SELL' : 'MIXED') },
+        { k: 'H1', lbl: '1h', v: buyPct >= 58 ? 'BUY' : (sellPct >= 58 ? 'SELL' : 'MIXED') },
+        { k: 'H4', lbl: '4h', v: buyPct >= 62 ? 'BUY' : (sellPct >= 62 ? 'SELL' : 'MIXED') },
+        { k: 'D1', lbl: '1Day', v: buyPct >= 65 ? 'BUY' : (sellPct >= 65 ? 'SELL' : 'MIXED') }
+      ];
+      tabs.innerHTML = TFS.map(item => {
+        const itemArrow = item.v === 'BUY' ? '▲' : (item.v === 'SELL' ? '▼' : '◆');
+        const itemSide = item.v === 'BUY' ? 'buy' : (item.v === 'SELL' ? 'sell' : 'mixed');
+        const on = (aiBoard.timeframe || 'M5') === item.k ? ' sel' : '';
+        return `<span class="ai-tab ${itemSide}${on}" data-tf="${item.k}">${item.lbl} ${itemArrow}</span>`;
+      }).join('');
+    }
+
+    // 4. Update #ai-updated status age
+    const updEl = $('ai-updated');
+    if (updEl) {
+      updEl.textContent = LANG === 'bn'
+        ? `আপডেট: ০ সেকেন্ড আগে · TRADERS ORDER FLOW টার্মিনাল লাইভ অটো-আপডেট`
+        : `Updated: 0s ago · TRADERS ORDER FLOW TERMINAL Live Auto-Update`;
+    }
+
+    // 5. Update Timeframe Detail Grid (#ai-grid)
+    const grid = $('ai-grid');
+    if (grid && (!grid.children.length || grid.querySelector('.ai-empty'))) {
+      const TFS = [
+        { k: 'M1', name: '1m', tfConf: confidence },
+        { k: 'M5', name: '5m', tfConf: confidence },
+        { k: 'M15', name: '15m', tfConf: Math.max(50, confidence - 3) },
+        { k: 'H1', name: '1h', tfConf: Math.max(50, confidence - 6) },
+        { k: 'H4', name: '4h', tfConf: Math.max(50, confidence - 9) },
+        { k: 'D1', name: '1Day', tfConf: Math.max(50, confidence - 12) }
+      ];
+      grid.innerHTML = TFS.map(tfItem => {
+        const tfVerdict = sideClass === 'buy' ? 'BUY' : (sideClass === 'sell' ? 'SELL' : 'MIXED');
+        const tfArrow = sideClass === 'buy' ? '▲' : (sideClass === 'sell' ? '▼' : '◆');
+        const selClass = (aiBoard.timeframe || 'M5') === tfItem.k ? ' sel' : '';
+        return `
+          <div class="ai-row ${sideClass}${selClass}" data-key="${tfItem.k}">
+            <div class="ai-row-top">
+              <span class="ai-tf-name">${tfItem.name}</span>
+              <span class="sess-verdict ${sideClass}">${tfArrow} ${tfVerdict}</span>
+              <span class="ai-conf">${tfItem.tfConf}%</span>
+            </div>
+            <div class="ai-row-mid">
+              <span>Order Flow</span>
+              <span>Speed ${stats.speed || '0.0'} tx/s</span>
+              <span>Delta ${stats.netDelta >= 0 ? '+' : ''}$${Math.abs(stats.netDelta || 0).toFixed(0)}</span>
+            </div>
+            <div class="ai-row-up">▲ UP ${upPrice.toFixed(digits)} <small>+$${Math.abs(upMoney).toFixed(1)}</small></div>
+            <div class="ai-row-down">▼ DOWN ${downPrice.toFixed(digits)} <small>-$${Math.abs(downMoney).toFixed(1)}</small></div>
+            <div class="ai-row-note">Traders Order Flow Terminal · ${buyPct}% Buyers / ${sellPct}% Sellers</div>
+          </div>
+        `;
+      }).join('');
+    } else if (grid) {
+      grid.querySelectorAll('.ai-row').forEach(rowEl => {
+        const tfVerdict = sideClass === 'buy' ? 'BUY' : (sideClass === 'sell' ? 'SELL' : 'MIXED');
+        const tfArrow = sideClass === 'buy' ? '▲' : (sideClass === 'sell' ? '▼' : '◆');
+        rowEl.className = `ai-row ${sideClass}${rowEl.classList.contains('sel') ? ' sel' : ''}`;
+        const verdEl = rowEl.querySelector('.sess-verdict');
+        if (verdEl) {
+          verdEl.className = `sess-verdict ${sideClass}`;
+          verdEl.textContent = `${tfArrow} ${tfVerdict}`;
+        }
+        const confEl = rowEl.querySelector('.ai-conf');
+        if (confEl) confEl.textContent = `${confidence}%`;
+        const upEl = rowEl.querySelector('.ai-row-up');
+        if (upEl) upEl.innerHTML = `▲ UP ${upPrice.toFixed(digits)} <small>+$${Math.abs(upMoney).toFixed(1)}</small>`;
+        const downEl = rowEl.querySelector('.ai-row-down');
+        if (downEl) downEl.innerHTML = `▼ DOWN ${downPrice.toFixed(digits)} <small>-$${Math.abs(downMoney).toFixed(1)}</small>`;
+        const noteEl = rowEl.querySelector('.ai-row-note');
+        if (noteEl) noteEl.textContent = `Traders Order Flow: ${buyPct}% Buyers / ${sellPct}% Sellers · Live`;
+      });
+    }
+  };
+
   window.addEventListener('resize', () => {
     ['bot1', 'bot2', 'bot3', 'bot4', 'bot5', 'flow'].forEach(botKey => {
       const sym = getBotSelectedSymbol(botKey);
