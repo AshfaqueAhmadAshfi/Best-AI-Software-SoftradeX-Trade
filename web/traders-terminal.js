@@ -771,7 +771,7 @@ Grab Holdings
     }
 
     trades.unshift(trade);
-    if (trades.length > 250) trades.pop();
+    if (trades.length > 1000) trades.pop();
 
     updateStatsBar();
 
@@ -867,7 +867,7 @@ Grab Holdings
       }
 
       // Cap DOM children to 40 for ultra-fluid rendering
-      while (tapeBody.children.length > 40) {
+      while (tapeBody.children.length > 1000) {
         tapeBody.removeChild(tapeBody.lastChild);
       }
     });
@@ -1098,7 +1098,7 @@ Grab Holdings
   function reRenderAllRows() {
     const tapeBodies = document.querySelectorAll('.tt-tape-body');
     tapeBodies.forEach(tb => { tb.innerHTML = ''; });
-    const filtered = trades.filter(matchesFilter).slice(0, 40);
+    const filtered = trades.filter(matchesFilter).slice(0, 1000);
     filtered.slice().reverse().forEach(tr => renderRow(tr, true));
   }
 
