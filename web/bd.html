@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>BD Stock Market Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261021_bd" />
+  <link rel="stylesheet" href="/static/styles-premium.css?v=20261021_bd" />
+  <link rel="stylesheet" href="/static/styles-ultra.css?v=20261022_traderwrap" />
+  <link rel="stylesheet" href="/static/styles-mech.css?v=20261021_bd" />
+  <link rel="stylesheet" href="/static/bd.css?v=20261021_bd4" />
+  <link rel="icon" type="image/jpeg" href="/static/logo.jpg" />
+  <style>
+    .bd-strip .acc-item { min-width: 110px; }
+    .bd-mchip { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, .18); background: rgba(15, 20, 32, .7); color: #c9d3e0;
+      font: 700 12.5px "Space Grotesk", sans-serif; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+    .bd-mchip:hover { border-color: rgba(0, 240, 255, .35); }
+    .bd-mchip.sel { border-color: rgba(0, 240, 255, .7); box-shadow: 0 0 0 1px rgba(0, 240, 255, .25), 0 0 16px rgba(0, 240, 255, .12); color: #fff; }
+    .bd-mchip .mc-icon { font-size: 14px; }
+    .bd-mchip .mc-sym { letter-spacing: .04em; }
+    .bd-mchip .mc-chg { font: 700 10.5px "JetBrains Mono", monospace; }
+    .bd-mchip.up .mc-chg { color: #0ECB81; } .bd-mchip.down .mc-chg { color: #F6465D; } .bd-mchip.flat .mc-chg { color: #8b98ab; }
+    .bd-sim-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+      font: 600 11px "Space Grotesk", sans-serif; letter-spacing: .08em; color: #ffd166; border: 1px solid rgba(255, 209, 102, .35);
+      background: rgba(255, 209, 102, .08); }
+    .bd-sim-pill i { width: 8px; height: 8px; border-radius: 50%; background: #ffd166; box-shadow: 0 0 8px #ffd166; }
+    .bd-clock { display: inline-flex; gap: 8px; align-items: baseline; font-family: "JetBrains Mono", monospace; }
+    .bd-clock b { font-size: 15px; color: var(--txt, #e2e8f0); }
+    .bd-clock small { color: #8b98ab; font-size: 10px; letter-spacing: .1em; }
+    .bd-home-btn { text-decoration: none; }
+    #market-watch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+    .bd-watch-card { background: rgba(15, 20, 32, .65); border: 1px solid rgba(148, 163, 184, .14); border-radius: 12px;
+      padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; position: relative; overflow: hidden; transition: border-color .2s; }
+    .bd-watch-card.sel { border-color: rgba(0, 240, 255, .55); box-shadow: 0 0 0 1px rgba(0, 240, 255, .18), 0 0 18px rgba(0, 240, 255, .08); cursor: pointer; }
+    .bd-watch-card:hover { border-color: rgba(0, 240, 255, .3); }
+    .bdw-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .bdw-sym { font: 700 13px "Space Grotesk", sans-serif; color: #e2e8f0; display: flex; align-items: center; gap: 6px; }
+    .bdw-sym small { color: #64748b; font: 600 9px "JetBrains Mono", monospace; letter-spacing: .08em; }
+    .bdw-price { font: 700 15px "JetBrains Mono", monospace; color: #f8fafc; }
+    .bdw-price.up { color: #0ECB81; } .bdw-price.down { color: #F6465D; }
+    .bdw-chg { font: 700 10.5px "JetBrains Mono", monospace; padding: 2px 7px; border-radius: 999px; }
+    .bdw-chg.up { color: #0ECB81; background: rgba(14, 203, 129, .12); } .bdw-chg.down { color: #F6465D; background: rgba(246, 70, 93, .12); }
+    .bdw-bar { height: 5px; border-radius: 4px; overflow: hidden; display: flex; background: rgba(246, 70, 93, .18); }
+    .bdw-bar span { display: block; height: 100%; background: linear-gradient(90deg, #0ECB81, #5effb2); }
+    .bdw-foot { display: flex; justify-content: space-between; font: 500 9.5px "JetBrains Mono", monospace; color: #8b98ab; }
+    .bdw-status { font: 700 8.5px "JetBrains Mono", monospace; letter-spacing: .1em; color: #ffd166; }
+    .bdw-status.open { color: #0ECB81; }
+    .bd-outlook-chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, .2); background: rgba(15, 20, 32, .7); font: 600 12px "Space Grotesk", sans-serif; }
+    .bd-outlook-chip .o-chg { font-family: "JetBrains Mono", monospace; font-size: 11px; }
+    .bd-outlook-chip.up { border-color: rgba(14, 203, 129, .4); } .bd-outlook-chip.up .o-dir { color: #0ECB81; }
+    .bd-outlook-chip.down { border-color: rgba(246, 70, 93, .4); } .bd-outlook-chip.down .o-dir { color: #F6465D; }
+    .bd-outlook-chip.flat .o-dir { color: #94a3b8; }
+    .bd-sess-card { background: rgba(15, 20, 32, .65); border: 1px solid rgba(148, 163, 184, .14); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .bd-sess-card.active { border-color: rgba(14, 203, 129, .45); box-shadow: 0 0 16px rgba(14, 203, 129, .08); }
+    .bd-sess-name { font: 700 12px "Space Grotesk", sans-serif; color: #e2e8f0; letter-spacing: .05em; }
+    .bd-sess-range { font: 500 10.5px "JetBrains Mono", monospace; color: #8b98ab; }
+    .bd-sess-end { font: 700 15px "JetBrains Mono", monospace; color: #ffd166; }
+    .bd-sess-tag { font: 700 9px "JetBrains Mono", monospace; letter-spacing: .12em; color: #0ECB81; }
+    .bd-sess-tag.off { color: #64748b; }
+    .bd-ai-tf { display: flex; flex-direction: column; gap: 8px; background: rgba(15, 20, 32, .65); border: 1px solid rgba(148, 163, 184, .14);
+      border-radius: 12px; padding: 12px; }
+    .bd-ai-grade { font: 800 13px "Space Grotesk", sans-serif; }
+    .bd-ai-grade.buy { color: #0ECB81; } .bd-ai-grade.sell { color: #F6465D; } .bd-ai-grade.neutral { color: #94a3b8; }
+    .bd-ai-note { font: 500 10px "JetBrains Mono", monospace; color: #8b98ab; }
+    .bd-setup-row { display: grid; grid-template-columns: 8px 1.6fr 1fr 1fr 1fr .7fr 2fr; gap: 10px; align-items: center;
+      padding: 9px 12px; border-radius: 10px; background: rgba(15, 20, 32, .6); border: 1px solid rgba(148, 163, 184, .12); margin-bottom: 8px; }
+    .bd-setup-row .s-side { width: 8px; height: 100%; min-height: 26px; border-radius: 4px; }
+    .bd-setup-row.buy .s-side { background: #0ECB81; box-shadow: 0 0 8px rgba(14, 203, 129, .6); }
+    .bd-setup-row.sell .s-side { background: #F6465D; box-shadow: 0 0 8px rgba(246, 70, 93, .6); }
+    .bd-setup-title { font: 700 12px "Space Grotesk", sans-serif; color: #e2e8f0; }
+    .bd-setup-note { font: 500 10px "JetBrains Mono", monospace; color: #8b98ab; }
+    .bd-setup-px { font: 700 12.5px "JetBrains Mono", monospace; color: #f8fafc; }
+    .bd-impacted-chip { display: inline-flex; gap: 6px; align-items: center; padding: 4px 10px; border-radius: 999px;
+      font: 700 10.5px "JetBrains Mono", monospace; border: 1px solid rgba(148, 163, 184, .25); margin: 3px 5px 3px 0; }
+    .bd-impacted-chip.buy { color: #0ECB81; border-color: rgba(14, 203, 129, .4); }
+    .bd-impacted-chip.sell { color: #F6465D; border-color: rgba(246, 70, 93, .4); }
+    .bd-impacted-chip.wait { color: #94a3b8; }
+    #flow-curve-box { width: 100%; min-height: 150px; }
+    #flow-curve-box svg { display: block; width: 100%; height: 150px; }
+    .bd-target-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+    .bd-target-chip { padding: 6px 12px; border-radius: 10px; background: rgba(15, 20, 32, .7);
+      border: 1px solid rgba(148, 163, 184, .2); font: 700 11.5px "JetBrains Mono", monospace; color: #e2e8f0; }
+    .bd-target-chip small { color: #64748b; font: 600 9px "JetBrains Mono", monospace; letter-spacing: .1em; display: block; }
+  </style>
+</head>
+
+<body class="bd-dashboard">
+  <script>
+    // BD Stock Market page feeds the SAME chart terminal from the BD (DSE)
+    // catalogue instead of Exness - identical component code, different feed.
+    window.SOFTRADEX_CONFIG = { feedName: 'BD DSE', symbolsUrl: '/api/chart/symbols?market=bd', wsPath: '/ws/chart' };
+  </script>
+
+  <div id="app">
+
+    <!-- ================= TOP BAR ================= -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark"><img src="/static/logo.jpg" alt="Logo" class="logo"></span>
+        <div class="brand-text">
+          <strong>BD Stock Market Dashboard</strong>
+          <span>Dhaka Stock Exchange · live-style order flow &amp; market intelligence</span>
+        </div>
+        <span class="bd-sim-pill" title="DSE quotes are not available on MT5: this feed is a deterministic simulated mirror of the Dhaka market"><i></i> SIM FEED · DSE</span>
+      </div>
+
+      <div class="topbar-right">
+        <div class="bd-clock" title="Asia/Dhaka local time">
+          <small>DHAKA</small> <b id="bd-dhaka-clock">--:--:--</b>
+        </div>
+        <span class="pill watch-pill" id="bd-dse-status">DSE —</span>
+        <span class="bd-bdt-badge" title="Every amount on this dashboard is shown in Bangladeshi Taka">৳ BDT</span>
+        <a class="btn bd-home-btn" href="/" title="Back to the Exness Trading Dashboard" style="min-width:unset;">⬅ Exness Dashboard</a>
+      </div>
+    </header>
+
+    <!-- ================= DASHBOARD ================= -->
+    <main id="dash" class="dash">
+
+      <!-- BD strip -->
+      <section class="account-strip bd-strip" id="bd-market-strip">
+        <div class="acc-item highlight">
+          <span class="acc-label">DSEX Index</span>
+          <span id="bd-strip-dsex" class="acc-value">—</span>
+        </div>
+        <div class="acc-item">
+          <span class="acc-label">DSE30</span>
+          <span id="bd-strip-dse30" class="acc-value">—</span>
+        </div>
+        <div class="acc-item">
+          <span class="acc-label">GP</span>
+          <span id="bd-strip-gp" class="acc-value">—</span>
+        </div>
+        <div class="acc-item">
+          <span class="acc-label">BATBC</span>
+          <span id="bd-strip-batbc" class="acc-value">—</span>
+        </div>
+        <div class="acc-item">
+          <span class="acc-label">Market</span>
+          <span id="bd-strip-session" class="acc-value">—</span>
+        </div>
+        <div class="acc-item">
+          <span class="acc-label">Updated</span>
+          <span id="bd-strip-updated" class="acc-value">—</span>
+        </div>
+      </section>
+
+      <!-- ================= SOFTRADEX LIVE PRO TERMINAL (BD feed) ================= -->
+      <section class="softradex-terminal-section binance-terminal-section" id="binance-terminal-section">
+        <div class="softradex-term-topbar binance-term-topbar">
+          <div class="term-brand-block">
+            <img src="/static/logo.jpg" alt="BD Market" class="softradex-term-logo binance-logo-svg" width="22" height="22" />
+            <span class="term-brand-name">BD DSE</span>
+            <span class="term-pro-tag">DSE SIM FEED</span>
+            <span class="term-live-pulse" id="b-term-pulse" title="Waiting for the BD DSE tick stream…"></span>
+          </div>
+
+          <div class="binance-symbol-tabs" id="binance-symbol-tabs"></div>
+
+          <div class="binance-ticker-strip" id="binance-ticker-strip">
+            <div class="b-stat b-stat-price">
+              <span class="b-val" id="b-live-price">--</span>
+              <span class="b-change" id="b-live-change">--%</span>
+            </div>
+            <div class="b-stat">
+              <span class="b-lbl">Day High</span>
+              <span class="b-val" id="b-24h-high">--</span>
+            </div>
+            <div class="b-stat">
+              <span class="b-lbl">Day Low</span>
+              <span class="b-val" id="b-24h-low">--</span>
+            </div>
+            <div class="b-stat">
+              <span class="b-lbl">Tick Vol</span>
+              <span class="b-val" id="b-24h-vol">--</span>
+            </div>
+          </div>
+
+          <div class="binance-tf-tabs" id="binance-tf-tabs">
+            <button type="button" class="b-tf-btn" data-interval="1m">1m</button>
+            <button type="button" class="b-tf-btn active" data-interval="5m">5m</button>
+            <button type="button" class="b-tf-btn" data-interval="15m">15m</button>
+            <button type="button" class="b-tf-btn" data-interval="1h">1h</button>
+            <button type="button" class="b-tf-btn" data-interval="4h">4h</button>
+            <button type="button" class="b-tf-btn" data-interval="1d">1D</button>
+          </div>
+
+          <div class="binance-term-actions">
+            <div class="binance-open-vol-strip" id="binance-open-vol-strip">
+              <div class="b-open-chip b-open-buy" id="b-open-buy-chip" title="Live Open Buyer Volume in BDT (Decreases on Close/TP/SL)">
+                <span class="b-open-arrow">▲</span>
+                <div class="b-open-text">
+                  <span class="b-open-lbl">BUY OPEN</span>
+                  <span class="b-open-val b-open-buy-val" id="b-open-buy-val">৳0.00</span>
+                </div>
+              </div>
+              <div class="b-open-chip b-open-sell" id="b-open-sell-chip" title="Live Open Seller Volume in BDT (Decreases on Close/TP/SL)">
+                <span class="b-open-arrow">▼</span>
+                <div class="b-open-text">
+                  <span class="b-open-lbl">SELL OPEN</span>
+                  <span class="b-open-val b-open-sell-val" id="b-open-sell-val">৳0.00</span>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="term-toggle-btn" id="binance-term-toggle" title="Toggle Terminal Visibility">
+              <span id="b-toggle-icon">−</span> <span id="b-toggle-text">Collapse</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="binance-term-workspace" id="binance-term-workspace">
+          <div class="binance-chart-wrapper">
+            <div class="binance-chart-legend" id="binance-chart-legend">
+              <span class="b-legend-sym" id="b-legend-sym">DSEX / INDEX · 5M</span>
+              <span class="b-legend-item">O: <strong id="b-ohlc-o">--</strong></span>
+              <span class="b-legend-item">H: <strong id="b-ohlc-h">--</strong></span>
+              <span class="b-legend-item">L: <strong id="b-ohlc-l">--</strong></span>
+              <span class="b-legend-item">C: <strong id="b-ohlc-c">--</strong></span>
+              <span class="b-legend-item">Vol: <strong id="b-ohlc-v">--</strong></span>
+              <span class="b-legend-ind sma7">SMA(7): <strong id="b-sma-7">--</strong></span>
+              <span class="b-legend-ind sma25">SMA(25): <strong id="b-sma-25">--</strong></span>
+              <span class="b-legend-ind whale-ind" id="b-whale-status" title="Whale order tracking on candles"><span class="whale-dot"></span> 🐋 Whales: <strong id="b-whale-stat-txt">LIVE</strong></span>
+            </div>
+            <div class="binance-canvas-box" id="binance-canvas-box">
+              <canvas id="binance-candlestick-canvas"></canvas>
+              <div class="chart-status-overlay" id="chart-status-overlay" hidden>
+                <span class="chart-status-title" id="chart-status-title"></span>
+                <span class="chart-status-sub" id="chart-status-sub"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Traders Order Flow Terminal (sidebar) -->
+          <div class="binance-book-sidebar" id="binance-book-sidebar">
+            <div class="traders-terminal-panel" id="traders-terminal-sidebar">
+              <div class="tt-header">
+                <div class="tt-title-wrap">
+                  <span class="tt-pulse-dot"></span>
+                  <span class="tt-title">TRADERS ORDER FLOW TERMINAL</span>
+                  <span class="tt-conn-badge" id="tt-sidebar-market-badge" title="Live Market Order Flow">🔗 LIVE: <b class="tt-connected-symbol" id="tt-sidebar-connected-symbol">DSEX</b></span>
+                  <span class="tt-bdt-badge">৳ BDT</span>
+                </div>
+                <div class="tt-stats-bar">
+                  <div class="tt-stat-chip tt-buy-vol">
+                    <span class="tt-stat-lbl">BUY VOL</span>
+                    <b class="tt-buy-vol-val" id="tt-sidebar-buy-vol-val">50% (৳0)</b>
+                  </div>
+                  <div class="tt-stat-chip tt-sell-vol">
+                    <span class="tt-stat-lbl">SELL VOL</span>
+                    <b class="tt-sell-vol-val" id="tt-sidebar-sell-vol-val">50% (৳0)</b>
+                  </div>
+                  <div class="tt-stat-chip tt-close-stat">
+                    <span class="tt-stat-lbl">CLOSED</span>
+                    <b class="tt-close-stat-val" id="tt-sidebar-close-stat-val">0 tx (৳0)</b>
+                  </div>
+                  <div class="tt-stat-chip tt-speed">
+                    <span class="tt-stat-lbl">SPEED</span>
+                    <b class="tt-speed-val" id="tt-sidebar-speed-val">0.0 tx/s</b>
+                  </div>
+                  <div class="tt-stat-chip tt-open-stat">
+                    <span class="tt-stat-lbl">RUNNING</span>
+                    <b class="tt-open-count-val">0</b>
+                  </div>
+                  <div class="tt-stat-chip tt-pnl-stat">
+                    <span class="tt-stat-lbl">REALIZED P&amp;L</span>
+                    <b class="tt-realized-val">৳0</b>
+                  </div>
+                </div>
+              </div>
+
+              <div class="tt-subbar">
+                <div class="tt-filters">
+                  <button type="button" class="tt-filter-btn active" data-filter="all">ALL</button>
+                  <button type="button" class="tt-filter-btn" data-filter="open">OPEN ⚡</button>
+                  <button type="button" class="tt-filter-btn" data-filter="close">CLOSED ✕</button>
+                  <button type="button" class="tt-filter-btn" data-filter="buy">BUYS</button>
+                  <button type="button" class="tt-filter-btn" data-filter="sell">SELLS</button>
+                  <button type="button" class="tt-filter-btn" data-filter="whale">WHALES 🐋</button>
+                </div>
+                <div class="tt-meter-wrap" title="Buyer vs Seller Volume Split">
+                  <div class="tt-meter-bar">
+                    <div class="tt-meter-buy" style="width: 50%;"></div>
+                    <div class="tt-meter-sell" style="width: 50%;"></div>
+                  </div>
+                </div>
+                <div class="tt-controls">
+                  <button type="button" class="tt-ctrl-btn tt-pause-btn" title="Pause / Resume Live Tape">⏸</button>
+                  <button type="button" class="tt-ctrl-btn tt-clear-btn" title="Clear Tape">🗑</button>
+                </div>
+              </div>
+
+              <div class="tt-view-tabs" id="tt-sidebar-view-tabs" role="tablist" aria-label="Terminal view">
+                <button type="button" class="tt-view-tab active" data-tt-view="tape" role="tab" aria-selected="true">LIVE TAPE</button>
+                <button type="button" class="tt-view-tab" data-tt-view="running" role="tab" aria-selected="false">RUNNING <b class="tt-open-count-val">0</b></button>
+              </div>
+
+              <div class="tt-sidebar-pane tt-pane-tape" data-tt-pane="tape">
+                <div class="tt-columns-head">
+                  <span class="tt-col-time">TIME</span>
+                  <span class="tt-col-side">SIDE</span>
+                  <span class="tt-col-action">ACTION</span>
+                  <span class="tt-col-price">PRICE</span>
+                  <span class="tt-col-amount">SIZE</span>
+                  <span class="tt-col-total">ORDER / P&amp;L</span>
+                  <span class="tt-col-trader">TRADER / ROUTE</span>
+                </div>
+
+                <div class="tt-tape-body" id="tt-sidebar-tape-body"></div>
+              </div>
+
+              <div class="tt-sidebar-pane tt-pane-running" data-tt-pane="running" hidden>
+                <div class="tt-running-head tt-running-head-compact">
+                  <span><i class="tt-running-dot"></i>RUNNING POSITIONS <b id="tt-sidebar-running-count">0</b></span>
+                  <span id="tt-sidebar-running-total">৳0 open</span>
+                </div>
+                <div class="tt-running-body tt-running-body-compact" id="tt-sidebar-running-body">
+                  <div class="tt-run-empty">No running positions yet. A new OPEN order will appear here and stay visible until it is closed.</div>
+                </div>
+              </div>
+
+              <div class="tt-footer">
+                <span class="tt-foot-info"><span class="tt-foot-dot"></span> <span class="tt-status-text" id="tt-sidebar-status-text">Connected to BD Tape · 0ms latency</span></span>
+                <span class="tt-foot-total tt-foot-net-delta" id="tt-sidebar-net-delta">DELTA: <b class="pos">+৳0</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= SIGNAL PIPELINE ================= -->
+      <section class="flow" id="flow-pipeline">
+
+        <!-- 01 · MARKET -->
+        <div class="flow-stage" id="stage-market">
+          <div class="flow-step-row">
+            <span class="flow-step-num">01</span>
+            <span class="flow-step-name">MARKET</span>
+            <span class="flow-step-hint">pick one BD market — every stage below follows it</span>
+            <span class="flow-step-live"><i></i><span>LIVE</span></span>
+          </div>
+
+          <article class="panel market-hero" id="market-hero">
+            <div class="mh-main">
+              <div class="mh-head-bar">
+                <span class="mh-eyebrow">START HERE · SELECT YOUR BD MARKET</span>
+                <span class="mh-status" id="flow-market-status">—</span>
+              </div>
+              <div class="mh-chips" id="flow-market-chips"></div>
+            </div>
+
+            <div class="mh-stats-row">
+              <div class="mh-price-block">
+                <span class="mh-symbol" id="flow-symbol-label">—</span>
+                <span class="mh-price" id="flow-price">—</span>
+                <span class="mh-change" id="flow-change">—</span>
+              </div>
+
+              <div class="mh-side-block">
+                <span class="mh-signal" id="flow-signal">◆ WAIT</span>
+                <span class="mh-signal-sub" id="flow-signal-sub">the AI is still reading the flow</span>
+                <div class="mh-bar"><span class="mh-bar-buy" id="flow-bar-buy"></span></div>
+                <div class="mh-bar-labels">
+                  <span>BUY <b id="flow-buy-pct">—</b></span>
+                  <span>SELL <b id="flow-sell-pct">—</b></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mh-quote-block">
+              <span class="mh-quote"><em>BID</em><b id="flow-bid">—</b></span>
+              <span class="mh-quote"><em>ASK</em><b id="flow-ask">—</b></span>
+              <span class="mh-quote"><em>SPREAD</em><b id="flow-spread">—</b></span>
+            </div>
+
+            <div class="flow-balance" id="flow-balance">
+              <div class="fb-cell fb-title"><span class="fb-live"></span><span>LIVE TRADE FLOW</span></div>
+              <div class="fb-cell" id="fb-ours">Own account: excluded (data-only board)</div>
+              <div class="fb-cell" id="fb-world">World flow sensors: starting…</div>
+            </div>
+          </article>
+        </div>
+
+        <!-- 05 · NEXT EVENT -->
+        <div class="flow-stage" id="stage-news">
+          <div class="flow-step-row">
+            <span class="flow-step-num">05</span>
+            <span class="flow-step-name">NEXT EVENT</span>
+            <span class="flow-step-hint">DSE session phases + countdown to the print</span>
+            <span class="flow-step-live"><i></i><span>LIVE</span></span>
+          </div>
+
+          <div class="news-next-card" id="watch-next-card" style="margin-top: 0;">
+            <div class="news-next-head">
+              <span class="news-next-label">Next event</span>
+              <span class="news-countdown" id="watch-countdown">—</span>
+            </div>
+            <div class="news-next-title" id="watch-event-title">Reading the DSE calendar…</div>
+            <div class="news-next-meta" id="watch-event-meta">—</div>
+            <div class="news-bias-row">
+              <span class="news-bias-pill" id="watch-bias-pill">WAIT</span>
+              <span class="news-predicted-move" id="watch-predicted-move"></span>
+              <span class="news-bias-reason" id="watch-bias-reason">—</span>
+            </div>
+            <div class="news-impacted-block" id="watch-next-impacted-block">
+              <div class="news-impacted-title">🎯 IMPACTED MARKETS &amp; DIRECTION (BUY / SELL):</div>
+              <div id="watch-next-impacted-chips"></div>
+            </div>
+            <div class="news-plan" id="watch-plan">—</div>
+          </div>
+        </div>
+
+        <!-- 02 · PRESSURE DIAL -->
+        <div class="flow-stage" id="stage-dial">
+          <div class="flow-step-row">
+            <span class="flow-step-num">02</span>
+            <span class="flow-step-name">PRESSURE DIAL</span>
+            <span class="flow-step-hint">buyer vs seller pressure across the BD board</span>
+            <span class="flow-step-live"><i></i><span>LIVE</span></span>
+          </div>
+
+          <section class="panel watch-panel" id="market-watch-panel">
+            <div class="panel-head">
+              <div class="watch-head-left">
+                <span class="watch-panel-icon-wrap">
+                  <svg class="watch-panel-icon-svg" viewBox="0 0 24 24">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                    <circle cx="12" cy="12" r="7"/>
+                    <path d="M12 12l2-4"/>
+                  </svg>
+                </span>
+                <div>
+                  <h3 class="watch-main-title">
+                    Market Pressure Watch Dials
+                    <span class="pill watch-pill" id="watch-summary-pill">ORDER FLOW CALIBRATED</span>
+                  </h3>
+                  <p class="watch-subtitle">ডিএসই ও গ্রেটার বাংলাদেশ মার্কেটের রিয়েল-টাইম বায়ার/সেলার চাপের লাইভ মেশিন ওয়াচ ডায়াল</p>
+                </div>
+              </div>
+              <div class="watch-head-right">
+                <span class="watch-timer-badge" id="watch-timer-badge" title="Live stream">
+                  <span class="timer-pulse-dot"></span>
+                  <span id="watch-timer-text">LIVE · --:--:--</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="watch-grid" id="market-watch-grid">
+              <div style="color: #8b98ab; padding: 24px; font-size: 13px; grid-column: 1/-1; text-align: center;">
+                CALIBRATING BD MARKET TELEMETRY...
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- 03 · AI DIRECTION -->
+        <div class="flow-stage" id="stage-outlook">
+          <div class="flow-step-row">
+            <span class="flow-step-num">03</span>
+            <span class="flow-step-name">AI DIRECTION · NEXT DAY</span>
+            <span class="flow-step-hint">momentum, pressure &amp; session flow per market</span>
+            <span class="flow-step-live"><i></i><span>LIVE</span></span>
+          </div>
+
+          <div class="news-outlook" id="watch-outlook" style="margin-top: 0;">
+            <div class="news-outlook-head">
+              <span class="news-outlook-title">🤖 AI Market Direction · next day</span>
+              <span class="news-outlook-sub">one verdict per BD market</span>
+            </div>
+            <div class="news-outlook-chips" id="watch-outlook-chips"></div>
+          </div>
+        </div>
+
+        <!-- 04 · LIVE CURVE + ORDER FLOW TERMINAL -->
+        <div class="flow-stage" id="stage-curve">
+          <div class="flow-step-row">
+            <span class="flow-step-num">04</span>
+            <span class="flow-step-name">LIVE CURVE</span>
+            <span class="flow-step-hint">selected market · tick by tick</span>
+            <span class="flow-step-live"><i></i><span>LIVE</span></span>
+          </div>
+
+          <div class="flow-curve-shell">
+            <div class="flow-curve-head">
+              <span class="fc-live"><i></i><span>LIVE CURVE</span></span>
+              <span class="fc-sub" id="flow-curve-sub">selected market · tick by tick</span>
+            </div>
+            <div class="flow-curve-box" id="flow-curve-box"></div>
+
+            <div class="traders-terminal-panel" id="traders-terminal-panel">
+              <div class="tt-header">
+                <div class="tt-title-wrap">
+                  <span class="tt-pulse-dot"></span>
+                  <span class="tt-title">TRADERS ORDER FLOW TERMINAL</span>
+                  <span class="tt-conn-badge" id="tt-market-badge" title="Synchronized with Stage 01 Market">🔗 MARKET 01: <b id="tt-connected-symbol">DSEX</b></span>
+                  <span class="tt-bdt-badge">৳ BDT</span>
+                </div>
+                <div class="tt-stats-bar">
+                  <div class="tt-stat-chip tt-buy-vol">
+                    <span class="tt-stat-lbl">BUY VOL</span>
+                    <b id="tt-buy-vol-val" class="tt-buy-vol-val">50% (৳0)</b>
+                  </div>
+                  <div class="tt-stat-chip tt-sell-vol">
+                    <span class="tt-stat-lbl">SELL VOL</span>
+                    <b id="tt-sell-vol-val" class="tt-sell-vol-val">50% (৳0)</b>
+                  </div>
+                  <div class="tt-stat-chip tt-close-stat">
+                    <span class="tt-stat-lbl">CLOSED</span>
+                    <b class="tt-close-stat-val" id="tt-close-stat-val">0 tx (৳0)</b>
+                  </div>
+                  <div class="tt-stat-chip tt-speed">
+                    <span class="tt-stat-lbl">SPEED</span>
+                    <b id="tt-speed-val" class="tt-speed-val">0.0 tx/s</b>
+                  </div>
+                  <div class="tt-stat-chip tt-open-stat">
+                    <span class="tt-stat-lbl">RUNNING</span>
+                    <b class="tt-open-count-val">0</b>
+                  </div>
+                  <div class="tt-stat-chip tt-pnl-stat">
+                    <span class="tt-stat-lbl">REALIZED P&amp;L</span>
+                    <b class="tt-realized-val">৳0</b>
+                  </div>
+                </div>
+              </div>
+
+              <div class="tt-subbar">
+                <div class="tt-filters">
+                  <button type="button" class="tt-filter-btn active" data-filter="all">ALL</button>
+                  <button type="button" class="tt-filter-btn" data-filter="open">OPEN ⚡</button>
+                  <button type="button" class="tt-filter-btn" data-filter="close">CLOSED ✕</button>
+                  <button type="button" class="tt-filter-btn" data-filter="buy">BUYS</button>
+                  <button type="button" class="tt-filter-btn" data-filter="sell">SELLS</button>
+                  <button type="button" class="tt-filter-btn" data-filter="whale">WHALES 🐋</button>
+                </div>
+                <div class="tt-meter-wrap" title="Buyer vs Seller Volume Split">
+                  <div class="tt-meter-bar">
+                    <div class="tt-meter-buy" id="tt-meter-buy" style="width: 50%;"></div>
+                    <div class="tt-meter-sell" id="tt-meter-sell" style="width: 50%;"></div>
+                  </div>
+                </div>
+                <div class="tt-controls">
+                  <button type="button" class="tt-ctrl-btn" id="tt-pause-btn" title="Pause / Resume Live Tape">⏸</button>
+                  <button type="button" class="tt-ctrl-btn" id="tt-clear-btn" title="Clear Tape">🗑</button>
+                </div>
+              </div>
+
+              <div class="tt-main-grid">
+                <div class="tt-tape-col">
+                  <div class="tt-columns-head">
+                    <span class="tt-col-time">TIME</span>
+                    <span class="tt-col-side">SIDE</span>
+                    <span class="tt-col-action">ACTION</span>
+                    <span class="tt-col-price">PRICE</span>
+                    <span class="tt-col-amount">SIZE</span>
+                    <span class="tt-col-total">ORDER / P&amp;L</span>
+                    <span class="tt-col-trader">TRADER / ROUTE</span>
+                  </div>
+
+                  <div class="tt-tape-body" id="tt-tape-body"></div>
+                </div>
+
+                <aside class="tt-positions-col" aria-label="Running positions and session P&amp;L">
+                  <div class="tt-kpi-grid">
+                    <div class="tt-kpi tt-kpi-order">
+                      <span class="tt-kpi-label">ORDER FLOW</span>
+                      <b id="tt-kpi-order">৳0</b>
+                      <small id="tt-kpi-order-sub">BUY ৳0 · SELL ৳0</small>
+                    </div>
+                    <div class="tt-kpi tt-kpi-realized">
+                      <span class="tt-kpi-label">REALIZED P&amp;L</span>
+                      <b id="tt-kpi-realized">৳0</b>
+                      <small id="tt-kpi-realized-sub">0W / 0L closed</small>
+                    </div>
+                    <div class="tt-kpi tt-kpi-running">
+                      <span class="tt-kpi-label">RUNNING P&amp;L</span>
+                      <b id="tt-kpi-unrealized">৳0</b>
+                      <small>mark-to-market</small>
+                    </div>
+                    <div class="tt-kpi tt-kpi-winrate">
+                      <span class="tt-kpi-label">WIN RATE</span>
+                      <b id="tt-kpi-winrate">—</b>
+                      <small id="tt-kpi-winloss">0W / 0L</small>
+                    </div>
+                  </div>
+
+                  <div class="tt-running-head">
+                    <span><i class="tt-running-dot"></i>RUNNING POSITIONS <b id="tt-running-count">0</b></span>
+                    <span id="tt-running-total">৳0 open</span>
+                  </div>
+
+                  <div class="tt-running-body" id="tt-running-body">
+                    <div class="tt-run-empty">No running positions yet. A new OPEN order will appear here and stay visible until it is closed.</div>
+                  </div>
+                </aside>
+              </div>
+
+              <div class="tt-footer">
+                <span class="tt-foot-info"><span class="tt-foot-dot"></span> <span id="tt-status-text">Connected to Market 01 feed · 0ms latency</span></span>
+                <span class="tt-foot-summary">
+                  <span class="tt-foot-pnl">REALIZED <b class="tt-realized-val pos">৳0</b></span>
+                  <span class="tt-foot-pnl">RUNNING <b class="tt-unrealized-val pos">৳0</b></span>
+                </span>
+                <span class="tt-foot-total tt-foot-net-delta" id="tt-foot-net-delta">DELTA: <b class="pos">+৳0</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 08 · SESSIONS -->
+        <div class="flow-stage" id="stage-sessions">
+          <div class="flow-step-row">
+            <span class="flow-step-num">08</span>
+            <span class="flow-step-name">SESSIONS</span>
+            <span class="flow-step-hint">DSE session phases, live clock &amp; market bias</span>
+            <span class="flow-step-live"><i></i><span>LIVE</span></span>
+          </div>
+
+          <div class="sessions-board" id="sessions-board">
+            <div class="sessions-head">
+              <div class="sessions-head-left">
+                <span class="sessions-title">🌍 Trading Sessions · DSE day plan</span>
+                <span class="sessions-sub">Pre-open auction · continuous trading · post-close (Dhaka time)</span>
+              </div>
+              <div class="sessions-head-right">
+                <label class="sessions-pick">
+                  <span>Market</span>
+                  <select id="sessions-market"></select>
+                </label>
+                <span class="sessions-updated" id="sessions-updated">—</span>
+              </div>
+            </div>
+            <div class="sessions-summary" id="sessions-summary">—</div>
+            <div class="sessions-grid" id="sessions-grid">
+              <div class="sessions-loading">Starting the session clock…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 06 · FULL AI MARKET ANALYSIS -->
+        <div class="flow-stage" id="stage-ai">
+          <div class="flow-step-row">
+            <span class="flow-step-num">06</span>
+            <span class="flow-step-name">FULL AI ANALYSIS</span>
+            <span class="flow-step-hint">1m · 5m · 15m · 1h · 4h · 1Day candles + flow → where the price goes</span>
+            <span class="flow-step-live"><i></i><span>LIVE</span></span>
+          </div>
+
+          <div class="ai-board" id="ai-market-board">
+            <div class="ai-head">
+              <div class="ai-head-left">
+                <span class="ai-title">🧠 Full AI Market Analysis · live BUY / SELL</span>
+                <span class="ai-sub">candles + pressure dials + sessions → target levels</span>
+              </div>
+              <div class="ai-head-right">
+                <label class="ai-pick">
+                  <span>Market</span>
+                  <select id="ai-market"></select>
+                </label>
+                <span class="ai-updated" id="ai-updated">—</span>
+              </div>
+            </div>
+            <div class="ai-tf-tabs" id="ai-tf-tabs"></div>
+            <div class="ai-verdict" id="ai-verdict">—</div>
+            <div class="ai-targets" id="ai-targets">—</div>
+            <div class="ai-grid" id="ai-grid">
+              <div class="sessions-loading">Reading the candles…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 07 · NEXT SETUPS -->
+        <div class="flow-stage" id="stage-setups">
+          <div class="flow-step-row">
+            <span class="flow-step-num">07</span>
+            <span class="flow-step-name">NEXT SETUPS</span>
+            <span class="flow-step-hint">the next extreme executions, recalculated live</span>
+            <span class="flow-step-live"><i></i><span>LIVE</span></span>
+          </div>
+
+          <div class="planned-trades-card-wrap">
+            <div class="planned-trades-head">
+              <div class="planned-head-title-wrap">
+                <div class="planned-trades-title">Next 5 Extreme Execution Setups (Upcoming Trades)</div>
+                <span class="planned-cycle-badge" id="bot3-recalc-badge">⚡ Live Recalculation</span>
+              </div>
+              <div class="planned-head-actions">
+                <span class="planned-timer-pill" id="bot3-planned-timer">⏱️ auto</span>
+                <button type="button" class="btn-planned-recalc" id="bot3-recalc-btn" title="Recalculate now with fresh market data">
+                  <span class="recalc-spin-icon">🔄</span>
+                  <span class="recalc-text">Recalc</span>
+                </button>
+              </div>
+            </div>
+            <div id="bot3-planned-trades"></div>
+            <div class="planned-trades-footer" id="bot3-planned-footer">
+              <span class="planned-footer-text">🔄 Live recalculation: tracking swing, mean-reversion &amp; breakout levels of the selected market</span>
+              <span class="planned-last-updated" id="bot3-last-updated">Updated: Just now</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/softradex-terminal.js?v=20261021_bd6"></script>
+  <script src="/static/traders-terminal.js?v=20261022_bd11"></script>
+  <script src="/static/bd-app.js?v=20261021_bd6"></script>
+</body>
+
+</html>

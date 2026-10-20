@@ -31,6 +31,20 @@ except Exception:  # pragma: no cover - only if package missing
 # can never interleave on the wire. RLock so nested helpers stay simple.
 IPC_LOCK = threading.RLock()
 
+# The terminal the dashboard is (or was) attached to. Read-only helpers such as
+# the chart feed use it so they always attach to the SAME Exness terminal as
+# the trading engine instead of letting MetaTrader5 auto-pick one.
+_preferred_terminal_path: str = ""
+
+
+def set_preferred_terminal(path: str) -> None:
+    global _preferred_terminal_path
+    _preferred_terminal_path = str(path or "")
+
+
+def preferred_terminal_path() -> str:
+    return _preferred_terminal_path
+
 # ----------------------------------------------------------------- constants
 DEAL_ENTRY_IN = 0
 DEAL_ENTRY_OUT = 1
@@ -382,6 +396,7 @@ class MT5Client:
 
             self.connected = True
             self.terminal_path = cand or self._detect_running_path()
+            set_preferred_terminal(self.terminal_path)
             self.login = int(auth.login)
             self.server = str(getattr(auth, "server", server) or server)
             self._time_offset = 0.0
@@ -412,6 +427,82 @@ class MT5Client:
             _mt5(mt5.shutdown)
         except Exception:
             pass
+
+    def try_recover(self) -> bool:
+        """One bounded auto re-attach attempt to the Exness terminal.
+
+        After a quiet IPC loss (terminal restart, update, or the user closing
+        and re-opening it) the MetaTrader5 shim drops its attach. A re-login is
+        impossible without stored credentials on purpose, but the terminal
+        itself remembers the account: re-initializing the SAME terminal
+        restores the full session without a password. Only a terminal that is
+        genuinely gone for good (and does not auto-login) needs the user.
+        """
+        if mt5 is None or not self.login:
+            return False
+        path = self.terminal_path
+        try:
+            info = None
+            try:
+                info = _mt5(mt5.terminal_info)
+            except Exception:
+                info = None
+            if info is not None:
+                # attach is actually alive; the caller just hit a hiccup
+                self.connected = True
+                self.last_error = None
+                if not path:
+                    live_path = str(getattr(info, "path", "") or "")
+                    if live_path:
+                        exe = Path(live_path) / TERMINAL_EXE
+                        self.terminal_path = str(exe) if exe.exists() else live_path
+                if self.terminal_path:
+                    set_preferred_terminal(self.terminal_path)
+                return True
+            # pipe really is dead: drop the stale shim and re-attach.
+            # initialize() with a path re-launches / re-attaches the terminal.
+            try:
+                _mt5(mt5.shutdown)
+            except Exception:
+                pass
+            kwargs: Dict[str, Any] = {"timeout": 20000}
+            if path and Path(path).exists():
+                kwargs["path"] = path
+            if not _mt5(mt5.initialize, **kwargs):
+                return False
+            auth: Any = None
+            try:
+                auth = _mt5(mt5.account_info)
+            except Exception:
+                auth = None
+            if auth is None:
+                return False
+            if int(getattr(auth, "login", 0) or 0) != int(self.login):
+                # the terminal came back on a different account - never
+                # silently trade the wrong account; let the user decide
+                try:
+                    _mt5(mt5.shutdown)
+                except Exception:
+                    pass
+                return False
+            self._time_offset = 0.0
+            self._offset_locked = False
+            try:
+                self._calibrate_clock()
+            except Exception:
+                pass
+            # the re-attach succeeded: restore the live flag too, otherwise a
+            # caller that dropped it (or started with it cleared) would keep
+            # treating the session as dead while the pipe is actually healthy
+            if not self.terminal_path:
+                self.terminal_path = self._detect_running_path()
+            if self.terminal_path:
+                set_preferred_terminal(self.terminal_path)
+            self.connected = True
+            self.last_error = None
+            return True
+        except Exception:
+            return False
 
     # ----------------------------------------------------------------- info
     @staticmethod

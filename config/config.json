@@ -32,7 +32,7 @@
     "max_trades": 10,
     "tp": 0.3,
     "sl": 20.0,
-    "symbol": "BTCUSDTm",
+    "symbol": "XAUUSDm",
     "timeframe": "D1",
     "magic": 777002,
     "slippage_points": 30,
@@ -43,9 +43,9 @@
     "block_mid_from": 0.0,
     "block_mid_to": 0.0,
     "watch_enabled": true,
-    "reverse": true,
-    "watch_min_pct": 60.0,
-    "watch_min_threshold_pct": 60.0
+    "reverse": false,
+    "watch_min_pct": 55.0,
+    "watch_min_threshold_pct": 55.0
   },
   "bot3": {
     "running": false,

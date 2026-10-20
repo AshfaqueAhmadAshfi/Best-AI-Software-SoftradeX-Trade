@@ -488,6 +488,7 @@ let S = null;                 // latest snapshot from the backend
 let ws = null;
 let wsRetry = 0;
 let wsAlive = false;
+let lastServerMsgAt = 0;
 let wasConnected = false;
 let period = 'today';
 let histPeriod = '7';
@@ -523,14 +524,16 @@ function connectWS() {
   sock.onopen = () => {
     if (ws !== sock) return;
     wsAlive = true; wsRetry = 0;
+    lastServerMsgAt = Date.now();
     $('foot-ws').textContent = 'socket: live';
     $('foot-ws').style.color = '#86efac';
     sock.send(JSON.stringify({ type: 'refresh' }));
   };
   sock.onmessage = (ev) => {
     if (ws !== sock) return;
+    lastServerMsgAt = Date.now();
     let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
-    if (msg.type === 'state') { applyState(msg.data); }
+    if (msg.type === 'state') { queueStateFrame(msg.data); }
     else if (msg.type === 'watch') { queueWatchFrame(msg.data); }
     else if (msg.type === 'notify') { toast(msg.data.kind, msg.data.message); }
   };
@@ -542,6 +545,34 @@ function connectWS() {
     scheduleReconnect();
   };
   sock.onerror = () => { try { sock.close(); } catch (e) {} };
+}
+
+/* The engine pushes a full state snapshot whenever anything moves - with live
+   prices in its change gate that is 6-8 frames per second, and one snapshot
+   repaints the whole dashboard (~35 ms). Keep only the newest snapshot and
+   paint at most ~4 per second: the dials and the chart already stream their
+   own 20 fps tick frames, so nothing visible waits for this. */
+let _statePending = null;
+let _stateLastAt = 0;
+let _stateTimer = null;
+function applyPendingState() {
+  _stateTimer = null;
+  _stateLastAt = Date.now();
+  const next = _statePending;
+  _statePending = null;
+  if (next) applyState(next);
+}
+function queueStateFrame(data) {
+  if (!data) return;
+  _statePending = data;
+  const wait = 250 - (Date.now() - _stateLastAt);
+  if (wait <= 0) {
+    if (_stateTimer) { clearTimeout(_stateTimer); _stateTimer = null; }
+    applyPendingState();
+    return;
+  }
+  if (_stateTimer) return;
+  _stateTimer = setTimeout(applyPendingState, wait);
 }
 
 function scheduleReconnect() {
@@ -650,6 +681,12 @@ async function pollFlowBalanceWorld() {
 function applyState(data) {
   if (!data) return;
   const prev = S;
+  // The engine leaves the (1 MB) calendar out of frames where it did not
+  // change; keep showing the last list it did send.
+  if (data.bot5 && !Array.isArray(data.bot5.news)
+      && prev && prev.bot5 && Array.isArray(prev.bot5.news)) {
+    data.bot5.news = prev.bot5.news;
+  }
   S = data;
   const connected = !!data.connected || data.status === 'connected' || (data.mode === 'ea');
   if (!connected && wasConnected) fullResetUI();
@@ -674,23 +711,41 @@ function applyState(data) {
     marketWatches = data.market_watch;
     applyMarketWatchState();   // (also refreshes the ticker tape)
   }
-  try { renderBot(data); } catch (e) { console.error('renderBot error:', e); }
-  try { renderBot2(data); } catch (e) { console.error('renderBot2 error:', e); }
-  try { renderBot3(data); } catch (e) { console.error('renderBot3 error:', e); }
-  try { renderBot4(data); } catch (e) { console.error('renderBot4 error:', e); }
+  // Bots 1-4, 6 and 7 live inside the side drawer only. Repainting them at
+  // every engine frame while that drawer is shut was the single most expensive
+  // thing on the page (15k hidden nodes + innerHTML rebuilds), so they are
+  // painted once when the drawer opens instead. Bot 5 also feeds the news
+  // panel on the main page, so it always renders.
+  if (botsDrawerOpen()) {
+    renderBotsPanels(data);
+  }
   try { renderBot5(data); } catch (e) { console.error('renderBot5 error:', e); }
   try { renderSessions(data); } catch (e) { console.error('renderSessions error:', e); }
   try { renderAiMarket(data); } catch (e) { console.error('renderAiMarket error:', e); }
   try { renderFlowStage(data); } catch (e) { console.error('renderFlowStage error:', e); }
-  try { renderBot6(data); } catch (e) { console.error('renderBot6 error:', e); }
-  try { renderBot7(data); } catch (e) { console.error('renderBot7 error:', e); }
-  try { updateAllMarketChips(); } catch (e) { console.error('updateAllMarketChips error:', e); }
   try { renderPositions(data); } catch (e) { console.error('renderPositions error:', e); }
   try { updateFlowBalanceOurs(data); } catch (e) { console.error('updateFlowBalanceOurs error:', e); }
   try { renderHistory(data); } catch (e) { console.error('renderHistory error:', e); }
   try { renderFeed(data); } catch (e) { console.error('renderFeed error:', e); }
   try { renderFooter(data); } catch (e) { console.error('renderFooter error:', e); }
   try { detectNewClosed(prev, data); } catch (e) { console.error('detectNewClosed error:', e); }
+}
+
+/* True while the bots drawer is on screen. Its contents are skipped by the
+   browser when closed (content-visibility), so repainting them is wasted work. */
+function botsDrawerOpen() {
+  const dash = $('dash');
+  return !!dash && dash.classList.contains('drawer-right-open');
+}
+
+function renderBotsPanels(d) {
+  if (!d) return;
+  try { renderBot(d); } catch (e) { console.error('renderBot error:', e); }
+  try { renderBot2(d); } catch (e) { console.error('renderBot2 error:', e); }
+  try { renderBot3(d); } catch (e) { console.error('renderBot3 error:', e); }
+  try { renderBot4(d); } catch (e) { console.error('renderBot4 error:', e); }
+  try { renderBot6(d); } catch (e) { console.error('renderBot6 error:', e); }
+  try { renderBot7(d); } catch (e) { console.error('renderBot7 error:', e); }
 }
 
 /* Wipe every trace of the previous session (used on disconnect / logout) */
@@ -3948,22 +4003,21 @@ async function selectFlowMarket(sym) {
     setBotCurveSymbol('bot5', sym);
   }
 
-  // 3. Synchronize SoftradeX / Binance Pro Terminal if crypto/gold counterpart exists
+  // 3. Synchronize the Exness MT5 chart with the selected market.
+  // The chart resolves broker suffixes itself (XAUUSD247m -> XAUUSDm, ...).
   const activeTerm = window.SoftradeXTerminal || window.BinanceTerminal;
   if (activeTerm && typeof activeTerm.switchMarket === 'function') {
-    const sUp = sym.toUpperCase();
-    if (sUp.includes('XAU') || sUp.includes('GOLD') || sUp.includes('PAXG')) {
-      activeTerm.switchMarket('PAXGUSDT');
-    } else if (sUp.includes('BTC')) {
-      activeTerm.switchMarket('BTCUSDT');
-    } else if (sUp.includes('ETH')) {
-      activeTerm.switchMarket('ETHUSDT');
-    }
+    const target = typeof activeTerm.resolveSymbol === 'function'
+      ? activeTerm.resolveSymbol(sym)
+      : '';
+    if (target) activeTerm.switchMarket(target);
   }
 
-  // 3b. Synchronize Traders Order Flow Terminal directly with Market 01
+  // 3b. Synchronize Traders Order Flow Terminal directly with Market 01.
+  // force=true: hard reset — the tape is wiped and rebuilt for THIS market
+  // only (nothing from any previously selected market can leak through).
   if (window.TradersTerminal && typeof window.TradersTerminal.switchMarket === 'function') {
-    window.TradersTerminal.switchMarket(sym);
+    window.TradersTerminal.switchMarket(sym, true);
   }
 
   // 4. Synchronize market select dropdowns in Sessions and AI board
@@ -3982,21 +4036,35 @@ async function selectFlowMarket(sym) {
     aiSel.value = sym;
   }
 
-  // 5. Instantly refresh all views
+  // 5. Instantly refresh every stage that follows Market 01
   renderFlowStage(S || {});
-  renderMarketWatches();
+  renderMarketWatches();          // 02 · Market Pressure Watch Dials
   updateAllMarketChips();
-  void pollFlowBalanceWorld();   // the flow strip follows the selected market
-  if (typeof renderAiMarket === 'function') renderAiMarket(S || {});
-  if (typeof renderSessions === 'function') renderSessions(S || {});
+  void pollFlowBalanceWorld();    // the flow strip follows the selected market
+  if (typeof renderAiMarket === 'function') renderAiMarket(S || {});   // 06 · Full AI analysis
+  if (typeof renderSessions === 'function') renderSessions(S || {});   // 08 · Sessions
+  if (typeof renderBot5 === 'function') renderBot5(S || {});           // 05 · Next event + 03 · AI direction
 
   // 6. Update backend configurations
   try {
-    await Promise.all([
+    const rets = await Promise.all([
       sessPost('/api/bot5/config', { ai_market: sym, session_market: sym }),
       sessPost('/api/bot3/config', { symbol: sym }),
     ]);
+    if (S) {
+      if (rets[0] && rets[0].bot5) S.bot5 = rets[0].bot5;
+      if (rets[1] && rets[1].bot3) S.bot3 = rets[1].bot3;
+    }
   } catch (e) {}
+  // the backend recalculated for the selected market — repaint every stage again
+  if (S) {
+    renderFlowStage(S);
+    renderMarketWatches();
+    if (typeof renderAiMarket === 'function') renderAiMarket(S);
+    if (typeof renderSessions === 'function') renderSessions(S);
+    if (typeof renderBot5 === 'function') renderBot5(S);
+    if (typeof renderBot3 === 'function') renderBot3(S);    // 07 · Next setups
+  }
   if (wsAlive) { try { ws.send(JSON.stringify({ type: 'refresh' })); } catch (e) {} }
 }
 
@@ -4009,8 +4077,7 @@ function renderFlowStage(d) {
   const digits = Number(w.digits !== undefined ? w.digits : (board.digits || 2));
   const f = flowPressure(sym);
 
-  // ---- market select + chips: comprehensive list of all markets
-  const sel = $('flow-market');
+  // ---- market chips: comprehensive list of all markets
   const DEFAULT_MARKET_LIST = [
     'XAUUSDm', 'BTCUSDTm', 'ETHUSDTm', 'EURUSDm', 'GBPUSDm',
     'USDJPYm', 'AUDUSDm', 'USDCADm', 'USDCHFm', 'USOILm', 'USTECm', 'US30m'
@@ -4029,15 +4096,7 @@ function renderFlowStage(d) {
   });
   if (sym && !syms.includes(sym)) syms.unshift(sym);
 
-  if (sel) {
-    const sig = syms.join('|') + '#' + sym;
-    if (sel.dataset.sig !== sig) {
-      sel.dataset.sig = sig;
-      sel.innerHTML = syms.map(s => `<option value="${esc(s)}"${s === sym ? ' selected' : ''}>${esc(s)}</option>`).join('');
-    } else if (sym && sel.value !== sym) {
-      sel.value = sym;
-    }
-  }
+  // the market picker is the chip row below (there is no <select> element)
   const chips = $('flow-market-chips');
   if (chips) {
     const top = syms.slice(0, 12);
@@ -4242,6 +4301,8 @@ function initFlowUI() {
     if (pd) pd.setAttribute('aria-hidden', side === 'left' ? 'false' : 'true');
     const bd = $('bots-drawer');
     if (bd) bd.setAttribute('aria-hidden', side === 'right' ? 'false' : 'true');
+    // the drawer was paused while shut - paint it with the newest engine state
+    if (side === 'right' && S) renderBotsPanels(S);
 
     if (side === 'left' && tab) {
       switchLeftDrawerTab(tab);
@@ -4380,11 +4441,6 @@ function initFlowUI() {
     });
   }
 
-  const sel = $('flow-market');
-  if (sel && !sel.dataset.bound) {
-    sel.dataset.bound = '1';
-    sel.addEventListener('change', () => { void selectFlowMarket(sel.value); });
-  }
   const chips = $('flow-market-chips');
   if (chips && !chips.dataset.bound) {
     chips.dataset.bound = '1';
@@ -6377,16 +6433,57 @@ function setBotCurveSymbol(botKey, sym) {
   drawBotCurve(botKey, sym);
 }
 
+/* Canvas sizes are cached here. Reading clientWidth/clientHeight from inside
+   the live draw path forced a full synchronous style + layout of this very
+   large dashboard (~70 ms per curve, eight curves per frame) - that is what
+   made the page stutter. The box is measured once when the card is built and
+   afterwards only by a ResizeObserver. */
+const _curveBoxes = new Map();   // botKey -> { wrap, w, h, dpr }
+
+function curveBoxFor(botKey, wrap) {
+  let box = _curveBoxes.get(botKey);
+  if (box && box.wrap === wrap) return box;
+  if (box && box.ro) { try { box.ro.disconnect(); } catch (e) {} }
+  box = { wrap, w: 0, h: 0, dpr: window.devicePixelRatio || 1, ro: null };
+  _curveBoxes.set(botKey, box);
+  if (window.ResizeObserver) {
+    try {
+      box.ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const rect = entry.contentRect || {};
+          box.w = Math.round(rect.width || 0);
+          box.h = Math.round(rect.height || 0);
+        }
+        box.dpr = window.devicePixelRatio || 1;
+        const card = $(`${botKey}-curve-card`);
+        if (card && card.dataset.sym) drawBotCurve(botKey, card.dataset.sym);
+      });
+      box.ro.observe(wrap);
+    } catch (e) { /* without ResizeObserver the one-time measure below still works */ }
+  }
+  return box;
+}
+
 function drawBotCurve(botKey, sym) {
   const canvas = $(`${botKey}-curve-canvas`);
   if (!canvas) return;
+  // the bot cards live in the side drawer: painting them while it is shut is
+  // invisible work (the browser also warns about rendering hidden subtrees)
+  if (!botsDrawerOpen() && canvas.closest && canvas.closest('#bots-drawer')) return;
   const wrap = canvas.parentElement;
   if (!wrap) return;
-  const W = wrap.clientWidth;
-  const H = wrap.clientHeight;
+  const box = curveBoxFor(botKey, wrap);
+  if (!box.w || !box.h) {
+    // first draw after the card was built - measured once, then cached
+    box.w = wrap.clientWidth;
+    box.h = wrap.clientHeight;
+    box.dpr = window.devicePixelRatio || 1;
+  }
+  const W = box.w;
+  const H = box.h;
   if (!W || !H) return;
 
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = box.dpr || 1;
   const targetW = Math.floor(W * dpr);
   const targetH = Math.floor(H * dpr);
   if (canvas.width !== targetW || canvas.height !== targetH) {
@@ -7106,6 +7203,14 @@ function init3DTiltEngine() {
   // while logged out, pick up a freshly installed MT5 terminal automatically
   setInterval(() => { if (!wasConnected) void loadConfig(true); }, 15000);
   setInterval(() => { if (wsAlive) { try { ws.send(JSON.stringify({ type: 'ping' })); } catch (e) {} } }, 20000);
+  // Half-dead socket watchdog: a sleeping machine / dropped NAT entry does not
+  // fire onclose, so a socket silent for several ping cycles is recycled.
+  setInterval(() => {
+    if (!wsAlive || !lastServerMsgAt) return;
+    if (Date.now() - lastServerMsgAt > 60000) {
+      try { ws.close(); } catch (e) {}
+    }
+  }, 15000);
   // live countdown ticker for Bot 2 2.5-second trend check
   setInterval(tickBot2TrendCountdown, 250);
   // live 1-second countdown ticker for Bot 3 60-second extreme setups recalculation

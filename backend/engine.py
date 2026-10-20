@@ -36,7 +36,7 @@ from .reversal_bot import ReversalCandleBot
 from .news_bot import NewsBot
 from . import market_ai as ai_mod
 from . import sessions as sess_mod
-from .mt5_client import MT5Client, describe_error, find_terminals, package_available, package_version, mt5, IPC_LOCK
+from .mt5_client import MT5Client, describe_error, find_terminals, package_available, package_version, mt5, IPC_LOCK, set_preferred_terminal
 from .market_watch import get_all_market_watches, get_live_quotes, check_symbol_market_status
 from .stats import compute_stats
 from .store import Store
@@ -492,6 +492,7 @@ class Engine:
             self.history_days = max(int(p["history_days"]), 1)
         if "terminal_path" in p:
             self.mt5.terminal_path = str(p["terminal_path"] or "")
+            set_preferred_terminal(self.mt5.terminal_path)
         cfg.update_config(**{k: v for k, v in p.items() if k in cfg.CONFIG})
         self._refresh_static()
         self._compute()
@@ -1474,14 +1475,22 @@ class Engine:
     # ---------------------------------------------------------------- ticks
     def _tick_live(self) -> None:
         if not self.mt5.connected:
-            self.status = "error"
-            self.error = {"code": -1, "message": "Connection to the MT5 terminal was lost",
-                          "hint": "Re-open the terminal, then log in again."}
-            self.mode = None
-            self.account_cache = None
-            self.positions_cache = []
-            return
+            # A transient IPC drop can clear the flag. Try the same quiet
+            # re-attach before parking the user on an error screen.
+            if not self._auto_heal_terminal():
+                self.status = "error"
+                self.error = {"code": -1, "message": "Connection to the MT5 terminal was lost",
+                              "hint": "Re-open the terminal, then log in again."}
+                self.mode = None
+                self.account_cache = None
+                self.positions_cache = []
+                return
         acc = self.mt5.account()
+        if acc is None:
+            # The meta bridge can drop silently (terminal restart/update).
+            # Re-attach a few times per minute before naming it an error.
+            if self._auto_heal_terminal():
+                acc = self.mt5.account()
         if acc is None:
             self.status = "error"
             self.error = {"code": -1, "message": "The terminal lost the account connection",
@@ -1817,6 +1826,34 @@ class Engine:
             status["map"] = self._build_map(magic, symbol, price, positions, orders)
             status["map_price"] = round(price, 6)
 
+    _HEAL_MIN_GAP = 15.0
+
+    def _auto_heal_terminal(self) -> bool:
+        """Quietly re-attaches the dashboard to the Exness terminal.
+
+        The MetaTrader5 IPC bridge can silently lose its attach (terminal
+        restart / update / brief close). Re-initializing the SAME terminal
+        restores the session without a stored password, so the dashboard keeps
+        streaming instead of parking the user on the login screen. Rate-limited
+        so a genuinely missing terminal stays a calm retry, never a busy loop.
+        """
+        now = time.time()
+        if now - getattr(self, "_last_heal_at", 0.0) < self._HEAL_MIN_GAP:
+            return False
+        self._last_heal_at = now
+        try:
+            ok = self.mt5.try_recover()
+        except Exception:
+            ok = False
+        if ok:
+            self.status = "connected"
+            self.error = None
+            self._log_event("success", "Exness terminal re-connected (auto)")
+        else:
+            self._log_event("warn",
+                            "Exness terminal offline - auto re-connect will keep trying every 15s")
+        return ok
+
     def _publish_watch(self, watches: List[Dict[str, Any]]) -> None:
         """Pushes only the market pressure watch dials whenever they move.
 
@@ -1997,8 +2034,30 @@ class Engine:
             return
         self._last_signature = sig
         self._last_publish_ts = time.time()
+        # The news calendar is ~1 MB (460 rows of headlines, forecasts and
+        # impacted markets). It changes a few times a minute, yet it rode along
+        # on every state frame - 90% of all socket traffic, serialised on the
+        # event loop, which is what made the dashboard stutter. Publish it only
+        # when it actually changed; the browser keeps the previous list.
+        wire = payload
+        b5 = payload.get("bot5")
+        if isinstance(b5, dict):
+            news = b5.get("news")
+            if isinstance(news, list):
+                first = news[0] if news else {}
+                news_sig = (len(news), b5.get("feed_updated"), b5.get("news_total"),
+                            first.get("ts"), first.get("side"), first.get("traded"),
+                            first.get("past"))
+                if news_sig == getattr(self, "_last_news_sig", None):
+                    wire = dict(payload)
+                    thin = dict(b5)
+                    thin.pop("news", None)
+                    thin["news_omitted"] = True
+                    wire["bot5"] = thin
+                else:
+                    self._last_news_sig = news_sig
         try:
-            self.publisher(payload, force)
+            self.publisher(wire, force)
         except Exception:
             pass
 

@@ -357,13 +357,16 @@ class TestNewsBot(unittest.TestCase):
         self.assertIn("NFP", d["headline"])
 
     def test_decide_bias_unknown_is_not_confident(self):
-        self.bot.symbol = "XAUUSDm"
-        self.bot.update_config({"bias_min_score": 3})
-        ev = {"title": "X", "country": "USD", "ts": time.time() + 60,
-              "impact": "high", "forecast": 200.0, "previous": 100.0}
-        d = self.bot.decide_bias(ev)
-        self.assertEqual(d["side"], "sell")
-        self.assertFalse(d["confident"])       # |score| 2 < 3
+        # A real MT5 terminal must not leak into this test - otherwise a live
+        # falling market adds momentum and |score| crosses bias_min_score.
+        with patch("backend.news_bot.mt5", None):
+            self.bot.symbol = "XAUUSDm"
+            self.bot.update_config({"bias_min_score": 3})
+            ev = {"title": "X", "country": "USD", "ts": time.time() + 60,
+                  "impact": "high", "forecast": 200.0, "previous": 100.0}
+            d = self.bot.decide_bias(ev)
+            self.assertEqual(d["side"], "sell")
+            self.assertFalse(d["confident"])       # |score| 2 < 3
 
     # ------------------------------------------------------------- trading
     def test_anticipate_opens_once_in_the_entry_window(self):

@@ -1399,6 +1399,13 @@ body.wires-on .flow-link,
 #positions-drawer { width: min(1060px, 97vw); }
 .side-drawer-left { left: 0; border-radius: 0 18px 18px 0; transform: translateX(-102%); }
 .side-drawer-right { right: 0; border-radius: 18px 0 0 18px; transform: translateX(102%); }
+/* A closed drawer is still 15k+ DOM nodes. Keeping its contents rendered off
+   screen forced a full style + layout of the whole document on every live
+   frame (~50-90 ms). content-visibility skips the closed contents completely
+   while keeping their DOM, JS state and the slide transition intact. */
+#positions-drawer, #bots-drawer { content-visibility: hidden; }
+#dash.drawer-left-open #positions-drawer,
+#dash.drawer-right-open #bots-drawer { content-visibility: visible; }
 #dash.drawer-left-open #positions-drawer,
 #dash.drawer-right-open #bots-drawer { transform: translateX(0); }
 .drawer-head {
@@ -1917,6 +1924,11 @@ body.no-scroll { overflow: hidden; }
   box-shadow: 0 0 8px #0ECB81;
   animation: termDotPulse 1.6s infinite;
 }
+.term-live-pulse.stale {
+  background: #F0B90B;
+  box-shadow: 0 0 8px rgba(240, 185, 11, 0.75);
+  animation: termDotPulse 3s infinite;
+}
 
 /* Symbol Tabs */
 .binance-symbol-tabs {
@@ -2043,11 +2055,131 @@ body.no-scroll { overflow: hidden; }
   border-color: #F0B90B;
 }
 
-/* Actions */
+/* Actions & Live Open Orders Volume */
+.binance-term-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.binance-open-vol-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.b-open-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  height: 24px;
+  border-radius: 6px;
+  font-family: var(--mono, "JetBrains Mono", monospace);
+  user-select: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.b-open-chip.b-open-buy {
+  background: linear-gradient(135deg, rgba(14, 203, 129, 0.16) 0%, rgba(14, 203, 129, 0.05) 100%);
+  border: 1px solid rgba(14, 203, 129, 0.45);
+  box-shadow: 0 0 10px rgba(14, 203, 129, 0.14), inset 0 0 6px rgba(14, 203, 129, 0.06);
+}
+
+.b-open-chip.b-open-buy:hover {
+  background: linear-gradient(135deg, rgba(14, 203, 129, 0.28) 0%, rgba(14, 203, 129, 0.12) 100%);
+  border-color: #0ECB81;
+  box-shadow: 0 0 14px rgba(14, 203, 129, 0.35);
+  transform: translateY(-1px);
+}
+
+.b-open-chip.b-open-sell {
+  background: linear-gradient(135deg, rgba(246, 70, 93, 0.16) 0%, rgba(246, 70, 93, 0.05) 100%);
+  border: 1px solid rgba(246, 70, 93, 0.45);
+  box-shadow: 0 0 10px rgba(246, 70, 93, 0.14), inset 0 0 6px rgba(246, 70, 93, 0.06);
+}
+
+.b-open-chip.b-open-sell:hover {
+  background: linear-gradient(135deg, rgba(246, 70, 93, 0.28) 0%, rgba(246, 70, 93, 0.12) 100%);
+  border-color: #F6465D;
+  box-shadow: 0 0 14px rgba(246, 70, 93, 0.35);
+  transform: translateY(-1px);
+}
+
+.b-open-arrow {
+  font-size: 8.5px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.b-open-buy .b-open-arrow {
+  color: #0ECB81;
+  text-shadow: 0 0 6px rgba(14, 203, 129, 0.7);
+}
+
+.b-open-sell .b-open-arrow {
+  color: #F6465D;
+  text-shadow: 0 0 6px rgba(246, 70, 93, 0.7);
+}
+
+.b-open-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.b-open-lbl {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+.b-open-buy .b-open-lbl {
+  color: #a7f3d0;
+}
+
+.b-open-sell .b-open-lbl {
+  color: #fecdd3;
+}
+
+.b-open-val {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.b-open-buy .b-open-val {
+  color: #0ECB81;
+  text-shadow: 0 0 8px rgba(14, 203, 129, 0.5);
+}
+
+.b-open-sell .b-open-val {
+  color: #F6465D;
+  text-shadow: 0 0 8px rgba(246, 70, 93, 0.5);
+}
+
+.b-open-val.flash-up {
+  color: #4ade80 !important;
+  text-shadow: 0 0 12px rgba(74, 222, 128, 0.8) !important;
+  transform: scale(1.08);
+}
+
+.b-open-val.flash-down {
+  color: #fb7185 !important;
+  text-shadow: 0 0 12px rgba(251, 113, 133, 0.8) !important;
+  transform: scale(0.94);
+}
+
 .binance-term-actions .term-toggle-btn {
   font-size: 10px;
   font-weight: 600;
   padding: 3px 10px;
+  height: 24px;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.05);
@@ -2668,6 +2800,7 @@ body.wires-on .flow-tag,
 }
 .tt-buy-vol b { color: #34d399; font-weight: 700; }
 .tt-sell-vol b { color: #f87171; font-weight: 700; }
+.tt-close-stat b { color: #fbbf24; font-weight: 700; }
 .tt-speed b { color: #38bdf8; font-weight: 700; }
 
 .tt-subbar {
@@ -2757,7 +2890,7 @@ body.wires-on .flow-tag,
 
 .tt-columns-head {
   display: grid;
-  grid-template-columns: 52px 48px 80px 78px 65px 1fr;
+  grid-template-columns: 50px 46px 50px 76px 72px 58px 1fr;
   padding: 3px 8px;
   background: rgba(13, 19, 33, 0.95);
   border-bottom: 1px solid rgba(56, 189, 248, 0.12);
@@ -2765,11 +2898,15 @@ body.wires-on .flow-tag,
   font-weight: 800;
   color: #64748b;
   letter-spacing: 0.05em;
+  align-items: center;
+}
+.tt-col-action {
+  color: #94a3b8;
 }
 
 @media (max-width: 1200px) {
   .tt-columns-head, .tt-row {
-    grid-template-columns: 48px 42px 72px 66px 56px 1fr;
+    grid-template-columns: 46px 40px 44px 66px 60px 52px 1fr;
     font-size: 8px;
   }
 }
@@ -2790,7 +2927,7 @@ body.wires-on .flow-tag,
 
 .tt-row {
   display: grid;
-  grid-template-columns: 52px 48px 80px 78px 65px 1fr;
+  grid-template-columns: 50px 46px 50px 76px 72px 58px 1fr;
   align-items: center;
   padding: 2px 4px;
   border-radius: 3px;
@@ -2817,6 +2954,18 @@ body.wires-on .flow-tag,
   background: rgba(239, 68, 68, 0.12);
 }
 
+.tt-row.close-trade {
+  background: rgba(245, 158, 11, 0.07);
+  border-left: 2px solid #f59e0b;
+}
+.tt-row.close-trade:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+.tt-row.close-trade.our-trade {
+  border-left: 2px solid #a855f7 !important;
+  background: rgba(168, 85, 247, 0.15) !important;
+}
+
 .tt-row.whale-trade {
   border-left: 2px solid #f59e0b;
   background: rgba(245, 158, 11, 0.09) !important;
@@ -2833,7 +2982,57 @@ body.wires-on .flow-tag,
 }
 .tt-cell-side {
   display: flex;
+  align-items: center;
 }
+.tt-cell-action {
+  display: flex;
+  align-items: center;
+}
+.tt-action-badge {
+  font-size: 7.5px;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 3px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.tt-action-badge.open {
+  background: rgba(56, 189, 248, 0.16);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.38);
+}
+.tt-action-badge.close {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+}
+.tt-action-badge.close.tp {
+  background: rgba(16, 185, 129, 0.22);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+}
+.tt-action-badge.close.sl {
+  background: rgba(239, 68, 68, 0.22);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+}
+.tt-action-badge.close.win {
+  background: rgba(16, 185, 129, 0.28);
+  color: #4ade80;
+  border: 1px solid rgba(16, 185, 129, 0.6);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.25);
+}
+.tt-action-badge.close.loss {
+  background: rgba(239, 68, 68, 0.28);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.25);
+}
+
 .tt-side-badge {
   font-size: 7.5px;
   font-weight: 800;
@@ -2879,9 +3078,17 @@ body.wires-on .flow-tag,
 .tt-cell-trader {
   color: #7dd3fc;
   font-size: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Trader / route names must never be cut off: the sidebar column is narrow,
+     so let long company / bank names wrap onto a second line instead of
+     clipping them with an ellipsis. Column widths and the rest of the row are
+     left untouched. */
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-height: 1.2;
   opacity: 0.9;
 }
 

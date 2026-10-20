@@ -23,12 +23,16 @@ if __package__ in (None, ""):
     from backend.mt5_client import find_terminals, package_available
     from backend.store import Store
     from backend.market_watch import get_all_market_watches
+    from backend.chart_feed import ChartUnavailable, TF_SEC as CHART_TFS, get_feed
+    from backend import bd_feed
 else:
     from . import config as cfg
     from .engine import Engine
     from .mt5_client import find_terminals, package_available
     from .store import Store
     from .market_watch import get_all_market_watches
+    from .chart_feed import ChartUnavailable, TF_SEC as CHART_TFS, get_feed
+    from . import bd_feed
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
@@ -216,6 +220,7 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         engine.stop()
+        chart_feed.stop()
 
 
 app = FastAPI(title=cfg.APP_NAME, version=cfg.VERSION, docs_url="/api/docs",
@@ -230,7 +235,7 @@ app = FastAPI(title=cfg.APP_NAME, version=cfg.VERSION, docs_url="/api/docs",
 @app.middleware("http")
 async def add_no_cache_headers(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path == "/" or request.url.path.startswith("/static"):
+    if request.url.path in ("/", "/bd", "/bd.html") or request.url.path.startswith("/static"):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -294,6 +299,29 @@ async def api_terminals(refresh: bool = False) -> Dict[str, Any]:
 
 
 # ------------------------------------------------------------------ market watch
+BD_PAGE = cfg.WEB_DIR / "bd.html"
+
+
+@app.get("/bd")
+@app.get("/bd.html")
+async def bd_page() -> FileResponse:
+    """BD Stock Market dashboard - shares the codebase of the Exness
+    dashboard but never touches the Exness page or its data sources."""
+    return FileResponse(str(BD_PAGE), media_type="text/html; charset=utf-8")
+
+
+@app.get("/api/bd/watch")
+async def api_bd_watch() -> Dict[str, Any]:
+    """Buyer vs seller pressure rows for every BD market (light 1 Hz frame)."""
+    return await asyncio.to_thread(bd_feed.watch_payload)
+
+
+@app.get("/api/bd/state")
+async def api_bd_state(symbol: str = Query("DSEX")) -> Dict[str, Any]:
+    """Hero + AI board + outlook + setups + sessions + next event + curve."""
+    return await asyncio.to_thread(bd_feed.state, symbol)
+
+
 @app.get("/api/market-watch")
 async def api_market_watch(force: bool = False) -> Dict[str, Any]:
     """Buyer vs seller pressure for all active markets.
@@ -792,6 +820,165 @@ async def api_ea_ping(request: Request) -> Dict[str, Any]:
     if secret and supplied and supplied != secret:
         raise HTTPException(401, "invalid EA token")
     return {"ok": True, "service": cfg.APP_NAME, "version": cfg.VERSION, "time": int(time.time())}
+
+
+# ------------------------------------------------------- exness chart feed
+# The chart is served straight from the connected Exness terminal. The browser
+# gets one snapshot (meta + bars + ticker + recent big prints) on subscribe and
+# then a tick stream at ~20 fps on /ws/chart.
+chart_feed = get_feed()
+
+
+@app.get("/api/chart/symbols")
+async def api_chart_symbols(market: str = Query("")) -> Dict[str, Any]:
+    """Instrument catalogue. ``market=bd`` serves the BD (DSE) feed for the BD
+    Stock Market dashboard; without it the exact Exness listing is returned."""
+    if str(market).strip().lower() == "bd":
+        return await asyncio.to_thread(bd_feed.symbols)
+    return await asyncio.to_thread(chart_feed.symbols)
+
+
+@app.get("/api/chart/candles")
+async def api_chart_candles(symbol: str = Query(...), tf: str = Query("5m"),
+                           count: int = Query(600, ge=50, le=2000)) -> Dict[str, Any]:
+    try:
+        bars = await asyncio.to_thread(chart_feed.candles, symbol, tf, count)
+        meta = await asyncio.to_thread(chart_feed.meta, symbol)
+    except ChartUnavailable as exc:
+        raise HTTPException(503, str(exc))
+    return {"symbol": symbol, "tf": tf, "meta": meta, "bars": bars}
+
+
+@app.get("/api/chart/ticker")
+async def api_chart_ticker(symbol: str = Query(...)) -> Dict[str, Any]:
+    try:
+        return await asyncio.to_thread(chart_feed.ticker, symbol)
+    except ChartUnavailable as exc:
+        raise HTTPException(503, str(exc))
+
+
+@app.get("/api/chart/tape")
+async def api_chart_tape(symbol: str = Query(...), limit: int = Query(40, ge=1, le=120)) -> Dict[str, Any]:
+    try:
+        rows = await asyncio.to_thread(chart_feed.tape_history, symbol, limit)
+        meta = await asyncio.to_thread(chart_feed.meta, symbol)
+    except ChartUnavailable as exc:
+        raise HTTPException(503, str(exc))
+    return {"symbol": symbol, "meta": meta, "prints": rows,
+            "recent": chart_feed.recent_prints(symbol, limit)}
+
+
+@app.websocket("/ws/chart")
+async def ws_chart(ws: WebSocket) -> None:
+    await ws.accept()
+    loop = asyncio.get_running_loop()
+    cid, queue = chart_feed.add_client(loop)
+    pending: Dict[str, Any] = {}
+    retry: Dict[str, Any] = {}
+
+    async def reader() -> None:
+        try:
+            while True:
+                raw = await ws.receive_text()
+                try:
+                    msg = json.loads(raw)
+                except Exception:
+                    continue
+                if msg.get("type") in ("sub", "subscribe", "chart"):
+                    symbol = str(msg.get("symbol") or "").strip()
+                    tf = str(msg.get("tf") or "5m")
+                    if symbol and tf in CHART_TFS:
+                        pending["symbol"] = symbol
+                        pending["tf"] = tf
+                        retry.clear()
+                        try:
+                            queue.put_nowait({"t": "__wake__"})
+                        except asyncio.QueueFull:
+                            pass
+                elif msg.get("type") == "ping":
+                    pending["pong"] = True
+                    try:
+                        queue.put_nowait({"t": "__wake__"})
+                    except asyncio.QueueFull:
+                        pass
+        except Exception:
+            pass
+
+    async def send_snapshot(symbol: str, tf: str) -> bool:
+        chart_feed.set_symbol(cid, "")
+        while not queue.empty():
+            try:
+                queue.get_nowait()
+            except Exception:
+                break
+        try:
+            snap = await asyncio.to_thread(chart_feed.snapshot, symbol, tf, 600)
+        except ChartUnavailable as exc:
+            snap = {"t": "error", "s": symbol, "message": str(exc)}
+        except Exception as exc:  # pragma: no cover - unexpected MT5 failure
+            snap = {"t": "error", "s": symbol, "message": str(exc)}
+        try:
+            await ws.send_json(snap)
+        except Exception:
+            return False
+        if snap.get("t") == "snap":
+            chart_feed.set_symbol(cid, symbol)
+            return True
+        return False
+
+    async def send_hb() -> bool:
+        try:
+            await ws.send_json({"t": "hb", "tm": int(time.time() * 1000)})
+            return True
+        except Exception:
+            return False
+
+    task = asyncio.create_task(reader())
+    try:
+        while True:
+            try:
+                frame = await asyncio.wait_for(queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                frame = None
+            if pending:
+                pong = bool(pending.pop("pong", False))
+                if "symbol" in pending:
+                    symbol = str(pending.pop("symbol", ""))
+                    tf = str(pending.pop("tf", "5m"))
+                    retry = {}
+                    if pong:
+                        await send_hb()
+                    # A failed snapshot (terminal busy / briefly offline) keeps
+                    # its request alive and is retried below so the chart heals
+                    # itself instead of staying empty until a manual refresh.
+                    if symbol and not await send_snapshot(symbol, tf):
+                        retry = {"symbol": symbol, "tf": tf, "at": time.time() + 3.0}
+                    continue
+                if pong:
+                    if not await send_hb():
+                        break
+                    continue
+            if retry and time.time() >= float(retry.get("at") or 0.0):
+                symbol = str(retry.get("symbol") or "")
+                tf = str(retry.get("tf") or "5m")
+                retry = {}
+                if symbol and not await send_snapshot(symbol, tf):
+                    retry = {"symbol": symbol, "tf": tf, "at": time.time() + 3.0}
+                continue
+            if frame is None:
+                if not await send_hb():
+                    break
+                continue
+            if frame.get("t") == "__wake__":
+                continue
+            await ws.send_json(frame)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        task.cancel()
+        chart_feed.remove_client(cid)
 
 
 @app.get("/api/health")

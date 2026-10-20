@@ -9,9 +9,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/styles.css?v=20261018_mktflow" />
+    <link rel="stylesheet" href="/static/styles.css?v=20261021_bdcard" />
     <link rel="stylesheet" href="/static/styles-premium.css?v=20261018_mktflow" />
-    <link rel="stylesheet" href="/static/styles-ultra.css?v=20261018_mktflow" />
+    <link rel="stylesheet" href="/static/styles-ultra.css?v=20261022_traderwrap" />
     <link rel="stylesheet" href="/static/styles-mech.css?v=20261018_mktflow" />
   <link rel="icon" type="image/jpeg" href="/static/logo.jpg" />
 </head>
@@ -136,6 +136,16 @@
             </div>
           </div>
         </div>
+        <div class="bd-access-card" id="bd-access-card" title="Separate data dashboard - the Exness terminal stays untouched">
+          <div class="bd-access-head">
+            <span class="bd-access-flag">🇧🇩</span>
+            <div class="bd-access-text">
+              <strong>BD Stock Market</strong>
+              <small>Dhaka Stock Exchange (DSE) &middot; live-style simulated feed &middot; same chart &amp; order-flow terminal</small>
+            </div>
+          </div>
+          <a id="bd-access-btn" class="btn bd-access-btn" href="/bd">Access</a>
+        </div>
       </div>
     </section>
 
@@ -211,23 +221,13 @@
         <div class="softradex-term-topbar binance-term-topbar">
           <div class="term-brand-block">
             <img src="/static/logo.jpg" alt="SoftradeX" class="softradex-term-logo binance-logo-svg" width="22" height="22" />
-            <span class="term-brand-name">SOFTRADEX</span>
-            <span class="term-pro-tag">PRO SPOT</span>
-            <span class="term-live-pulse online" id="b-term-pulse" title="Connected to SoftradeX Live Stream"></span>
+            <span class="term-brand-name">EXNESS</span>
+            <span class="term-pro-tag">MT5 CHART</span>
+            <span class="term-live-pulse" id="b-term-pulse" title="Waiting for the Exness tick stream…"></span>
           </div>
 
-          <!-- Symbol Tabs: Gold, BTC, ETH -->
-          <div class="binance-symbol-tabs" id="binance-symbol-tabs">
-            <button type="button" class="b-tab-btn active" data-symbol="PAXGUSDT">
-              <span class="b-icon">🟡</span> <span class="b-sym">GOLD</span><span class="b-pair">/USDT</span>
-            </button>
-            <button type="button" class="b-tab-btn" data-symbol="BTCUSDT">
-              <span class="b-icon">🟠</span> <span class="b-sym">BTC</span><span class="b-pair">/USDT</span>
-            </button>
-            <button type="button" class="b-tab-btn" data-symbol="ETHUSDT">
-              <span class="b-icon">🔷</span> <span class="b-sym">ETH</span><span class="b-pair">/USDT</span>
-            </button>
-          </div>
+          <!-- Symbol Tabs: live Exness instruments, filled by softradex-terminal.js -->
+          <div class="binance-symbol-tabs" id="binance-symbol-tabs"></div>
 
           <!-- Live 24h Ticker Statistics Bar -->
           <div class="binance-ticker-strip" id="binance-ticker-strip">
@@ -244,7 +244,7 @@
               <span class="b-val" id="b-24h-low">--</span>
             </div>
             <div class="b-stat">
-              <span class="b-lbl">24h Vol (USDT)</span>
+              <span class="b-lbl">24h Tick Vol</span>
               <span class="b-val" id="b-24h-vol">--</span>
             </div>
           </div>
@@ -259,8 +259,24 @@
             <button type="button" class="b-tf-btn" data-interval="1d">1D</button>
           </div>
 
-          <!-- Actions -->
+          <!-- Actions & Live Open Orders Volume -->
           <div class="binance-term-actions">
+            <div class="binance-open-vol-strip" id="binance-open-vol-strip">
+              <div class="b-open-chip b-open-buy" id="b-open-buy-chip" title="Live Open Buyer Dollar Volume (Decreases on Close/TP/SL)">
+                <span class="b-open-arrow">▲</span>
+                <div class="b-open-text">
+                  <span class="b-open-lbl">BUY OPEN</span>
+                  <span class="b-open-val b-open-buy-val" id="b-open-buy-val">$0.00</span>
+                </div>
+              </div>
+              <div class="b-open-chip b-open-sell" id="b-open-sell-chip" title="Live Open Seller Dollar Volume (Decreases on Close/TP/SL)">
+                <span class="b-open-arrow">▼</span>
+                <div class="b-open-text">
+                  <span class="b-open-lbl">SELL OPEN</span>
+                  <span class="b-open-val b-open-sell-val" id="b-open-sell-val">$0.00</span>
+                </div>
+              </div>
+            </div>
             <button type="button" class="term-toggle-btn" id="binance-term-toggle" title="Toggle Terminal Visibility">
               <span id="b-toggle-icon">−</span> <span id="b-toggle-text">Collapse</span>
             </button>
@@ -272,7 +288,7 @@
           <!-- Left: High Performance Candlestick & Volume Canvas -->
           <div class="binance-chart-wrapper">
             <div class="binance-chart-legend" id="binance-chart-legend">
-              <span class="b-legend-sym" id="b-legend-sym">GOLD/USDT · 5M</span>
+              <span class="b-legend-sym" id="b-legend-sym">GOLD / USD · 5M</span>
               <span class="b-legend-item">O: <strong id="b-ohlc-o">--</strong></span>
               <span class="b-legend-item">H: <strong id="b-ohlc-h">--</strong></span>
               <span class="b-legend-item">L: <strong id="b-ohlc-l">--</strong></span>
@@ -284,6 +300,10 @@
             </div>
             <div class="binance-canvas-box" id="binance-canvas-box">
               <canvas id="binance-candlestick-canvas"></canvas>
+              <div class="chart-status-overlay" id="chart-status-overlay" hidden>
+                <span class="chart-status-title" id="chart-status-title"></span>
+                <span class="chart-status-sub" id="chart-status-sub"></span>
+              </div>
             </div>
           </div>
 
@@ -305,6 +325,10 @@
                     <span class="tt-stat-lbl">SELL VOL</span>
                     <b class="tt-sell-vol-val" id="tt-sidebar-sell-vol-val">50% ($0)</b>
                   </div>
+                  <div class="tt-stat-chip tt-close-stat">
+                    <span class="tt-stat-lbl">CLOSED</span>
+                    <b class="tt-close-stat-val" id="tt-sidebar-close-stat-val">0 tx ($0)</b>
+                  </div>
                   <div class="tt-stat-chip tt-speed">
                     <span class="tt-stat-lbl">SPEED</span>
                     <b class="tt-speed-val" id="tt-sidebar-speed-val">0.0 tx/s</b>
@@ -316,6 +340,8 @@
               <div class="tt-subbar">
                 <div class="tt-filters">
                   <button type="button" class="tt-filter-btn active" data-filter="all">ALL</button>
+                  <button type="button" class="tt-filter-btn" data-filter="open">OPEN ⚡</button>
+                  <button type="button" class="tt-filter-btn" data-filter="close">CLOSED ✕</button>
                   <button type="button" class="tt-filter-btn" data-filter="buy">BUYS</button>
                   <button type="button" class="tt-filter-btn" data-filter="sell">SELLS</button>
                   <button type="button" class="tt-filter-btn" data-filter="whale">WHALES 🐋</button>
@@ -336,6 +362,7 @@
               <div class="tt-columns-head">
                 <span class="tt-col-time">TIME</span>
                 <span class="tt-col-side">SIDE</span>
+                <span class="tt-col-action">ACTION</span>
                 <span class="tt-col-price">PRICE</span>
                 <span class="tt-col-amount">SIZE</span>
                 <span class="tt-col-total">TOTAL ($)</span>
@@ -551,15 +578,19 @@
                 <div class="tt-stats-bar">
                   <div class="tt-stat-chip tt-buy-vol">
                     <span class="tt-stat-lbl">BUY VOL</span>
-                    <b id="tt-buy-vol-val">50% ($0)</b>
+                    <b id="tt-buy-vol-val" class="tt-buy-vol-val">50% ($0)</b>
                   </div>
                   <div class="tt-stat-chip tt-sell-vol">
                     <span class="tt-stat-lbl">SELL VOL</span>
-                    <b id="tt-sell-vol-val">50% ($0)</b>
+                    <b id="tt-sell-vol-val" class="tt-sell-vol-val">50% ($0)</b>
+                  </div>
+                  <div class="tt-stat-chip tt-close-stat">
+                    <span class="tt-stat-lbl">CLOSED</span>
+                    <b class="tt-close-stat-val" id="tt-close-stat-val">0 tx ($0)</b>
                   </div>
                   <div class="tt-stat-chip tt-speed">
                     <span class="tt-stat-lbl">SPEED</span>
-                    <b id="tt-speed-val">0.0 tx/s</b>
+                    <b id="tt-speed-val" class="tt-speed-val">0.0 tx/s</b>
                   </div>
                 </div>
               </div>
@@ -568,6 +599,8 @@
               <div class="tt-subbar">
                 <div class="tt-filters">
                   <button type="button" class="tt-filter-btn active" data-filter="all">ALL</button>
+                  <button type="button" class="tt-filter-btn" data-filter="open">OPEN ⚡</button>
+                  <button type="button" class="tt-filter-btn" data-filter="close">CLOSED ✕</button>
                   <button type="button" class="tt-filter-btn" data-filter="buy">BUYS</button>
                   <button type="button" class="tt-filter-btn" data-filter="sell">SELLS</button>
                   <button type="button" class="tt-filter-btn" data-filter="whale">WHALES 🐋</button>
@@ -588,6 +621,7 @@
               <div class="tt-columns-head">
                 <span class="tt-col-time">TIME</span>
                 <span class="tt-col-side">SIDE</span>
+                <span class="tt-col-action">ACTION</span>
                 <span class="tt-col-price">PRICE</span>
                 <span class="tt-col-amount">SIZE</span>
                 <span class="tt-col-total">TOTAL ($)</span>
@@ -602,7 +636,7 @@
               <!-- Terminal Footer Summary -->
               <div class="tt-footer">
                 <span class="tt-foot-info"><span class="tt-foot-dot"></span> <span id="tt-status-text">Connected to Market 01 feed · 0ms latency</span></span>
-                <span class="tt-foot-total" id="tt-foot-net-delta">DELTA: <b class="pos">+$0</b></span>
+                <span class="tt-foot-total tt-foot-net-delta" id="tt-foot-net-delta">DELTA: <b class="pos">+$0</b></span>
               </div>
             </div>
           </div>
@@ -1794,6 +1828,72 @@
     </div> <!-- /bots-drawer-body -->
   </aside>
 
+      <!-- ================= BIG PLAYER ORDER FLOW TERMINAL (very bottom) ================= -->
+      <section class="whale-flow-section" id="whale-flow-section">
+        <div class="wf-topbar">
+          <div class="wf-brand">
+            <span class="wf-icon">🐋</span>
+            <span class="wf-title">BIG PLAYER ORDER FLOW</span>
+            <span class="wf-tag">EXNESS MT5</span>
+            <span class="wf-pulse" id="wf-pulse" title="Waiting for the Exness tick stream…"></span>
+          </div>
+          <div class="wf-market-wrap">
+            <span class="wf-market-label">MARKET</span>
+            <span class="wf-market" id="wf-market">—</span>
+            <span class="wf-market-sub" id="wf-market-sub">waiting for the chart…</span>
+          </div>
+          <div class="wf-actions">
+            <button type="button" class="wf-btn" id="wf-pause" title="Pause the live tape">⏸ Pause</button>
+            <button type="button" class="wf-btn" id="wf-clear" title="Clear the tape">🗑 Clear</button>
+          </div>
+        </div>
+
+        <div class="wf-stats">
+          <div class="wf-stat wf-buy">
+            <span class="wf-stat-lbl">BUY PRINTS</span>
+            <b id="wf-buy">0</b><i id="wf-buy-pct">0%</i>
+          </div>
+          <div class="wf-stat wf-sell">
+            <span class="wf-stat-lbl">SELL PRINTS</span>
+            <b id="wf-sell">0</b><i id="wf-sell-pct">0%</i>
+          </div>
+          <div class="wf-stat">
+            <span class="wf-stat-lbl">BIG-PLAYER DELTA</span>
+            <b id="wf-delta">0</b><i id="wf-bias">BALANCED</i>
+          </div>
+          <div class="wf-stat">
+            <span class="wf-stat-lbl">FOLLOW RATE · 6s</span>
+            <b id="wf-follow">—</b><i id="wf-follow-sub">measuring…</i>
+          </div>
+          <div class="wf-stat">
+            <span class="wf-stat-lbl">MARKET LAST 5m</span>
+            <b id="wf-move">—</b><i id="wf-move-sub">—</i>
+          </div>
+          <div class="wf-meter" title="Buy vs sell big-player pressure">
+            <span class="wf-meter-buy" id="wf-meter-buy"></span>
+            <span class="wf-meter-sell" id="wf-meter-sell"></span>
+          </div>
+        </div>
+
+        <div class="wf-columns">
+          <span>TIME</span>
+          <span>SIDE</span>
+          <span>PRICE</span>
+          <span>BURST (ticks)</span>
+          <span>PRINT MOVE</span>
+          <span>MARKET FOLLOW · 6s</span>
+          <span>SOURCE</span>
+        </div>
+        <div class="wf-tape" id="wf-tape">
+          <div class="wf-empty" id="wf-empty">Listening to the Exness tick feed…</div>
+        </div>
+        <div class="wf-footer">
+          <span class="wf-foot-dot"></span>
+          <span id="wf-status">Waiting for the Exness terminal…</span>
+          <span class="wf-grow"></span>
+          <span class="wf-legend">BURST = unusually large tick burst · FOLLOW = price move 6s after the print</span>
+        </div>
+      </section>
     </main>
 
     <footer class="footer">
@@ -1833,9 +1933,10 @@
 
   <div id="toasts" class="toasts"></div>
 
-  <script src="/static/softradex-terminal.js?v=20261019_interactive_drag"></script>
-  <script src="/static/app.js?v=20261018_wireact"></script>
-  <script src="/static/traders-terminal.js?v=20261018_v1"></script>
+  <script src="/static/softradex-terminal.js?v=20261020_bdt"></script>
+  <script src="/static/app.js?v=20261021_mktflow"></script>
+  <script src="/static/traders-terminal.js?v=20261022_globalflow3"></script>
+  <script src="/static/whale-flow.js?v=20261019_v1"></script>
 </body>
 
 </html>

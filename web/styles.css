@@ -2836,3 +2836,69 @@ input:focus, select:focus, .inp:focus {
   letter-spacing: 0.4px;
 }
 
+
+
+/* ===== BD Stock Market access (login card, additive) ===== */
+.bd-access-card {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 240, 255, .25);
+  background: linear-gradient(135deg, rgba(0, 240, 255, .07), rgba(0, 80, 255, .04));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bd-access-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.bd-access-flag {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.bd-access-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bd-access-text strong {
+  color: #e2e8f0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.bd-access-text small {
+  color: #8b98ab;
+  font-size: 11px;
+}
+
+.bd-access-btn {
+  min-width: unset;
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 12.5px;
+  letter-spacing: .05em;
+  text-decoration: none;
+  white-space: nowrap;
+  color: #0aa8c4;
+  border: 1px solid rgba(0, 240, 255, .4);
+  background: rgba(0, 240, 255, .08);
+  cursor: pointer;
+  transition: background .15s;
+  display: inline-block;
+}
+
+.bd-access-btn:hover {
+  background: rgba(0, 240, 255, .16);
+}
