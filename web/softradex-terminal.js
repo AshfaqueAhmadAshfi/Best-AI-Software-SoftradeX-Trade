@@ -132,6 +132,19 @@
     return n.toFixed(2);
   }
 
+  function candleOrderFlow(candle) {
+    const terminal = window.TradersTerminal;
+    if (!terminal || typeof terminal.getCandleFlow !== 'function' || !candle) {
+      return { buy: 0, sell: 0 };
+    }
+    const seconds = TF_SECONDS[currentInterval] || 300;
+    try {
+      return terminal.getCandleFlow(candle.time, seconds) || { buy: 0, sell: 0 };
+    } catch (e) {
+      return { buy: 0, sell: 0 };
+    }
+  }
+
   // BDT markets (BD Stock Market dashboard) must never print a dollar sign.
   function currencyMark(symbol) {
     const meta = MARKETS[symbol] || {};
@@ -247,12 +260,40 @@
     return '';
   }
 
+  let currentCategory = 'all';
+  let marketSearchQuery = '';
+
   function renderSymbolTabs() {
     const tabs = $('binance-symbol-tabs');
     if (!tabs) return;
-    const rows = Object.keys(MARKETS).map(key => {
-      const m = MARKETS[key];
-      return '<button type="button" class="b-tab-btn" data-symbol="' + escHtml(key) + '" title="' +
+    const q = (marketSearchQuery || '').trim().toLowerCase();
+    const allKeys = Object.keys(MARKETS);
+    const keys = allKeys.filter(key => {
+      const m = MARKETS[key] || {};
+      const kind = (m.kind || 'other').toLowerCase();
+      // A search is global: typing "gold" must find gold even while the
+      // CRYPTO tab is selected. The category only narrows the plain list.
+      if (!q && currentCategory !== 'all' && kind !== currentCategory) {
+        return false;
+      }
+      if (q) {
+        const text = (key + ' ' + (m.label || '') + ' ' + (m.pair || '') + ' ' + (m.description || '')).toLowerCase();
+        if (text.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+
+    if (keys.length === 0) {
+      const emptyLabel = q ? 'No markets match your search'
+        : ('No markets found in ' + currentCategory.toUpperCase());
+      tabs.innerHTML = '<span style="font-size:11px;color:#64748b;padding:4px 8px;white-space:nowrap;">' + escHtml(emptyLabel) + '</span>';
+      return;
+    }
+
+    const rows = keys.map(key => {
+      const m = MARKETS[key] || {};
+      const isActive = key === currentSymbol;
+      return '<button type="button" class="b-tab-btn' + (isActive ? ' active' : '') + '" data-symbol="' + escHtml(key) + '" data-kind="' + escHtml(m.kind || '') + '" title="' +
         escHtml((m.description || key) + ' · Exness MT5') + '">' +
         '<span class="b-icon">' + escHtml(m.icon || '📊') + '</span> ' +
         '<span class="b-sym">' + escHtml(m.label || key) + '</span>' +
@@ -264,12 +305,23 @@
   }
 
   function updateActiveTabs() {
+    let activeBtn = null;
     document.querySelectorAll('#binance-symbol-tabs .b-tab-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.symbol === currentSymbol);
+      const isAct = btn.dataset.symbol === currentSymbol;
+      btn.classList.toggle('active', isAct);
+      if (isAct) activeBtn = btn;
     });
     document.querySelectorAll('#binance-tf-tabs .b-tf-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.interval === currentInterval);
     });
+    document.querySelectorAll('#exness-cat-tabs .exness-cat-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.cat === currentCategory);
+    });
+    if (activeBtn && typeof activeBtn.scrollIntoView === 'function') {
+      try {
+        activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      } catch (e) {}
+    }
   }
 
   async function loadMarkets() {
@@ -616,7 +668,11 @@
     const candleSlot = chartW / visibleCandlesCount;
     const candleBarW = Math.max(2, Math.floor(candleSlot * 0.72));
     const rightMarginCandles = 3;
-    const rightEdgeX = chartW - (rightMarginCandles * candleSlot);
+    // The news overlay reserves a future lane on the right (exactly where
+    // the next candles will print) so upcoming events can be timed.
+    const newsLaneW = (window.ChartNewsOverlay && typeof window.ChartNewsOverlay.laneWidth === 'function')
+      ? window.ChartNewsOverlay.laneWidth(chartW) : 0;
+    const rightEdgeX = chartW - (rightMarginCandles * candleSlot) - newsLaneW;
 
     // Helper: calculate X for candle index i (0 = oldest, klines.length - 1 = newest)
     function candleIndexToX(i) {
@@ -652,6 +708,19 @@
     if (minPrice === maxPrice || minPrice === Infinity) {
       minPrice = minPrice * 0.99;
       maxPrice = maxPrice * 1.01;
+    }
+
+    // Keep the predicted news targets on screen so their price marks and
+    // dollar moves stay readable next to the axis.
+    if (window.ChartNewsOverlay && typeof window.ChartNewsOverlay.priceBounds === 'function') {
+      const nb = window.ChartNewsOverlay.priceBounds({ klines: klines, symbol: currentSymbol });
+      if (nb) {
+        // Extend only so far: a target $1,100 away must not flatten the
+        // candles into a line - it then gets an off-scale axis badge instead.
+        const baseSpan = Math.abs(maxPrice - minPrice) || 1;
+        if (isFinite(nb.min) && nb.min < minPrice && (minPrice - nb.min) <= baseSpan * 1.5) minPrice = nb.min;
+        if (isFinite(nb.max) && nb.max > maxPrice && (nb.max - maxPrice) <= baseSpan * 1.5) maxPrice = nb.max;
+      }
     }
 
     // Add 12% price buffer top and bottom to ensure whale badges have clear margin
@@ -798,6 +867,57 @@
       ctx.fillRect(x - candleBarW / 2, topY, candleBarW, bodyH);
     }
 
+    // 6.25. Show active open BUY/SELL notional on the live candle only.
+    // These labels are sourced from the terminal's running positions, never
+    // from generated chart volume.
+    for (let i = 0; i < klines.length; i++) {
+      const c = klines[i];
+      // Open-flow totals belong only to the currently forming candle.
+      // Historical candles must not retain or display running-position labels.
+      if (i !== klines.length - 1) continue;
+      const x = candleIndexToX(i);
+      if (x < -candleSlot * 2 || x > chartW + candleSlot * 2) continue;
+      const flow = candleOrderFlow(c);
+      if (!(flow.buy > 0 || flow.sell > 0)) continue;
+
+      const yHigh = priceToY(c.high);
+      const yLow = priceToY(c.low);
+      const labelYTop = Math.max(11, yHigh - 25);
+      const labelYBottom = Math.min(candleH - 11, yLow + 25);
+      ctx.save();
+      const compact = candleSlot < 32;
+      const drawFlowLabel = (text, y, color, direction) => {
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.font = compact ? 'bold 7px "JetBrains Mono", monospace' : 'bold 8px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        if (compact) {
+          // Narrow candles cannot hold a horizontal label. Rotate it around
+          // this candle's x-center so it can never spill into its neighbours.
+          ctx.translate(x, y);
+          ctx.rotate(direction * Math.PI / 2);
+          ctx.fillText(text, 0, 0);
+        } else {
+          const pad = 4;
+          const width = ctx.measureText(text).width + pad * 2;
+          ctx.fillStyle = 'rgba(7, 12, 20, 0.86)';
+          ctx.fillRect(x - width / 2, y - 7, width, 14);
+          ctx.fillStyle = color;
+          ctx.fillText(text, x, y);
+        }
+        ctx.restore();
+      };
+
+      if (flow.buy > 0) {
+        drawFlowLabel(`BUY ${currencyMark(currentSymbol)}${formatCompact(flow.buy)}`, labelYTop, '#0ECB81', -1);
+      }
+      if (flow.sell > 0) {
+        drawFlowLabel(`SELL ${currencyMark(currentSymbol)}${formatCompact(flow.sell)}`, labelYBottom, '#F6465D', 1);
+      }
+      ctx.restore();
+    }
+
     // 6.5. Draw Whale Badges & Anchor Pointers on Candles
     for (let i = 0; i < klines.length; i++) {
       const c = klines[i];
@@ -895,6 +1015,26 @@
       }
 
       ctx.restore();
+    }
+
+    // 6.9. Economic-calendar events: released markers, the future lane on
+    // the right and the next-event countdown on the running candle.
+    if (window.ChartNewsOverlay && typeof window.ChartNewsOverlay.draw === 'function') {
+      window.ChartNewsOverlay.draw({
+        ctx: ctx,
+        chartW: chartW,
+        chartH: chartH,
+        candleH: candleH,
+        candleSlot: candleSlot,
+        rightEdgeX: rightEdgeX,
+        klines: klines,
+        tfSec: TF_SECONDS[currentInterval],
+        priceToY: priceToY,
+        candleIndexToX: candleIndexToX,
+        laneW: newsLaneW,
+        priceWidth: priceWidth,
+        symbol: currentSymbol,
+      });
     }
 
     // 7. Draw Current Price Line & Badge
@@ -1094,6 +1234,11 @@
     if (key === currentSymbol && chartReady) return true;
     currentSymbol = key;
     const meta = MARKETS[key] || {};
+    const kind = (meta.kind || '').toLowerCase();
+    if (kind && currentCategory !== 'all' && currentCategory !== kind && !marketSearchQuery) {
+      currentCategory = kind;
+      renderSymbolTabs();
+    }
 
     // Reset local data & show loading state (never seed fake candles)
     klines = [];
@@ -1194,6 +1339,7 @@
     // --- Mouse Drag to Pan ---
     canvas.addEventListener('mousedown', function (e) {
       if (e.button !== 0) return; // Left click only
+      e.preventDefault();
       isDragging = true;
       hasMovedDuringDrag = false;
       dragStartX = e.clientX;
@@ -1205,6 +1351,7 @@
       if (!canvas) return;
 
       if (isDragging) {
+        e.preventDefault();
         const dx = e.clientX - dragStartX;
         if (Math.abs(dx) > 3) hasMovedDuringDrag = true;
         panOffset = Math.max(0, Math.min(getMaxPan(), dragStartPan + dx));
@@ -1302,6 +1449,7 @@
     let touchInitialCount = 55;
 
     canvas.addEventListener('touchstart', function (e) {
+      e.preventDefault();
       if (e.touches.length === 1) {
         isDragging = true;
         hasMovedDuringDrag = false;
@@ -1315,9 +1463,10 @@
         );
         touchInitialCount = visibleCandlesCount;
       }
-    }, { passive: true });
+    }, { passive: false });
 
     canvas.addEventListener('touchmove', function (e) {
+      e.preventDefault();
       const chartW = (canvas.width / dpr) - PRICE_AXIS_W;
       const candleSlot = chartW / visibleCandlesCount;
       const maxPanOffset = Math.max(0, (klines.length - 8) * candleSlot);
@@ -1336,7 +1485,7 @@
         visibleCandlesCount = Math.max(16, Math.min(220, Math.round(touchInitialCount * scale)));
         scheduleChartRender();
       }
-    }, { passive: true });
+    }, { passive: false });
 
     canvas.addEventListener('touchend', function () {
       isDragging = false;
@@ -1370,6 +1519,29 @@
         const btn = e.target.closest('.b-tab-btn');
         if (!btn || !btn.dataset.symbol) return;
         switchMarket(btn.dataset.symbol);
+      });
+    }
+
+    // Market Category Tabs Listener
+    const catTabs = $('exness-cat-tabs');
+    if (catTabs) {
+      catTabs.addEventListener('click', e => {
+        const btn = e.target.closest('.exness-cat-btn');
+        if (!btn || !btn.dataset.cat) return;
+        currentCategory = btn.dataset.cat;
+        document.querySelectorAll('#exness-cat-tabs .exness-cat-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.cat === currentCategory);
+        });
+        renderSymbolTabs();
+      });
+    }
+
+    // Market Search Input Listener
+    const searchInp = $('exness-market-search');
+    if (searchInp) {
+      searchInp.addEventListener('input', e => {
+        marketSearchQuery = e.target.value;
+        renderSymbolTabs();
       });
     }
 
@@ -1451,6 +1623,7 @@
     getInterval: () => currentInterval,
     getMarkets: () => Object.keys(MARKETS),
     getLastTickAt: () => lastTickAt,
+    refresh: renderChart,
     MARKETS
   };
 

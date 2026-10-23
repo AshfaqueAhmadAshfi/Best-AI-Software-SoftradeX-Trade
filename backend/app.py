@@ -261,6 +261,7 @@ async def api_config() -> Dict[str, Any]:
         "exness_download": "https://www.exness.com/metatrader-5/",
         "mt5_download": "https://www.metatrader5.com/en/download",
         "remember_login": cfg.CONFIG.get("remember_login", True),
+        "bots_enabled": BOT_TRADING_ENABLED,
         "saved_login": cfg.CONFIG.get("saved_login", ""),
         "saved_server": cfg.CONFIG.get("saved_server", ""),
         "poll_interval_ms": cfg.CONFIG.get("poll_interval_ms", 400),
@@ -429,6 +430,16 @@ async def api_events(limit: int = 60) -> Dict[str, Any]:
 
 
 # ------------------------------------------------------------- auto trading
+BOT_TRADING_ENABLED = bool(cfg.CONFIG.get("bots_enabled", False))
+
+
+def bot_disabled_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=403,
+        content={"ok": False, "error": "Automated bots are disabled."},
+    )
+
+
 @app.get("/api/bot")
 async def api_bot() -> Dict[str, Any]:
     snap = engine.snapshot()
@@ -439,6 +450,8 @@ async def api_bot() -> Dict[str, Any]:
 @app.post("/api/bot/start")
 async def api_bot_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
     """Green: the bot arms the gold straddle and starts trading."""
+    if not BOT_TRADING_ENABLED:
+        return bot_disabled_response()
     patch: Dict[str, Any] = {"running": True}
     if "lot" in payload:
         patch["lot"] = payload["lot"]
@@ -483,6 +496,8 @@ async def api_bot2() -> Dict[str, Any]:
 @app.post("/api/bot2/start")
 async def api_bot2_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
     """Green: bot 2 starts candle momentum & structure auto trading."""
+    if not BOT_TRADING_ENABLED:
+        return bot_disabled_response()
     patch: Dict[str, Any] = {"running": True}
     for k in ("lot", "max_trades", "tp", "sl", "symbol", "timeframe", "magic", "cooldown_sec", "slippage_points", "trend_mode", "watch_enabled", "watch_min_pct", "reverse", "trend_check_interval", "block_start_sec", "block_end_sec", "block_mid_from", "block_mid_to"):
         if k in payload:
@@ -532,6 +547,8 @@ async def api_bot3() -> Dict[str, Any]:
 @app.post("/api/bot3/start")
 async def api_bot3_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
     """Green: bot 3 starts extreme structure sniping auto trading."""
+    if not BOT_TRADING_ENABLED:
+        return bot_disabled_response()
     patch: Dict[str, Any] = {"running": True}
     for k in ("lot", "max_trades", "tp", "sl", "symbol", "timeframe", "magic", "cooldown_sec", "slippage_points", "tolerance_pct"):
         if k in payload:
@@ -583,6 +600,8 @@ async def api_bot4() -> Dict[str, Any]:
 @app.post("/api/bot4/start")
 async def api_bot4_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
     """Green: bot 4 starts placing the buy / sell pre-trade ladders."""
+    if not BOT_TRADING_ENABLED:
+        return bot_disabled_response()
     patch: Dict[str, Any] = {"running": True}
     for k in BOT4_KEYS:
         if k in payload:
@@ -635,6 +654,8 @@ async def api_bot5() -> Dict[str, Any]:
 @app.post("/api/bot5/start")
 async def api_bot5_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
     """Green: the news trader starts watching the calendar and trading events."""
+    if not BOT_TRADING_ENABLED:
+        return bot_disabled_response()
     patch: Dict[str, Any] = {"running": True}
     for k in BOT5_KEYS:
         if k in payload:
@@ -697,6 +718,8 @@ async def api_bot6() -> Dict[str, Any]:
 @app.post("/api/bot6/start")
 async def api_bot6_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
     """Green: the pre-trade entry bot parks its pre-trade at the set Distance."""
+    if not BOT_TRADING_ENABLED:
+        return bot_disabled_response()
     patch: Dict[str, Any] = {"running": True}
     for k in BOT6_KEYS:
         if k in payload:
@@ -741,6 +764,8 @@ async def api_bot7() -> Dict[str, Any]:
 @app.post("/api/bot7/start")
 async def api_bot7_start(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
     """Green: the reversal bot starts hunting candle reversals."""
+    if not BOT_TRADING_ENABLED:
+        return bot_disabled_response()
     patch: Dict[str, Any] = {"running": True}
     for k in BOT7_KEYS:
         if k in payload:
@@ -912,7 +937,9 @@ async def ws_chart(ws: WebSocket) -> None:
             except Exception:
                 break
         try:
-            snap = await asyncio.to_thread(chart_feed.snapshot, symbol, tf, 600)
+            # The canvas shows about 55 bars. Keep a modest history window so
+            # the first MT5 IPC request and every browser repaint stay quick.
+            snap = await asyncio.to_thread(chart_feed.snapshot, symbol, tf, 360)
         except ChartUnavailable as exc:
             snap = {"t": "error", "s": symbol, "message": str(exc)}
         except Exception as exc:  # pragma: no cover - unexpected MT5 failure

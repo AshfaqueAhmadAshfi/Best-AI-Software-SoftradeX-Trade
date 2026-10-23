@@ -2669,9 +2669,7 @@ class NewsBot:
         if mt5 is None:
             return False
         try:
-            if mt5.terminal_info() is not None:
-                return True
-            return bool(mt5.initialize())
+            return mt5.terminal_info() is not None
         except Exception:
             return False
 
@@ -2735,7 +2733,8 @@ class NewsBot:
         """Average the last `days` of M15 bars per session window. MT5 only."""
         if mt5 is None or not symbol:
             return {}
-        self._ensure_terminal_conn()
+        if not self._ensure_terminal_conn():
+            return self._fallback_session_stats(symbol)
         rates = None
         if mt5 is not None:
             sym_candidates = [symbol]

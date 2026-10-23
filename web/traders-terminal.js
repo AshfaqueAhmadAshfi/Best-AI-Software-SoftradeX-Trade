@@ -547,6 +547,9 @@ Grab Holdings
   let softxGlobalPointer = 0;
   let tapeScanTimer = null;
   let lastTapeUserScroll = 0;
+  let snapshotScanSymbol = '';
+  let liquidityStarted = false;
+  const importedPositionIds = new Set();
   const bdTraderPointers = new Map();
 
   // Live Open Orders Pool (Only Active Open Trades: Buyer $ & Seller $)
@@ -641,11 +644,22 @@ Grab Holdings
       const own = livePriceForSymbol(trade.market);
       if (own > 0) mark = own;
     }
-    return (String(trade.side).toUpperCase() === 'BUY' ? (mark - entry) : (entry - mark)) * amount;
+    // Real MT5 tickets carry their contract size; simulated rows stay 1:1.
+    const contract = Number(trade.contract) > 0 ? Number(trade.contract) : 1;
+    return (String(trade.side).toUpperCase() === 'BUY' ? (mark - entry) : (entry - mark)) * amount * contract;
   }
 
   function openPnlTotal() {
     return activeOpenBuyTrades.concat(activeOpenSellTrades).reduce((sum, t) => sum + openPnlFor(t), 0);
+  }
+
+  function tradeNotional(trade) {
+    if (!trade) return 0;
+    const total = Number(trade.total);
+    if (Number.isFinite(total) && total > 0) return total;
+    const value = Number(trade.value);
+    if (Number.isFinite(value) && value > 0) return value;
+    return (Number(trade.price) || 0) * (Number(trade.amount) || 0);
   }
 
   function setText(id, value) {
@@ -676,10 +690,87 @@ Grab Holdings
 
   // --- Live Open Orders Volume Sync & Tracking ---
   function syncOpenVolumes() {
-    openBuyVol = activeOpenBuyTrades.reduce((sum, t) => sum + (Number(t.value) || 0), 0);
+    openBuyVol = activeOpenBuyTrades.reduce((sum, t) => sum + tradeNotional(t), 0);
     openBuyCount = activeOpenBuyTrades.length;
-    openSellVol = activeOpenSellTrades.reduce((sum, t) => sum + (Number(t.value) || 0), 0);
+    openSellVol = activeOpenSellTrades.reduce((sum, t) => sum + tradeNotional(t), 0);
     openSellCount = activeOpenSellTrades.length;
+  }
+
+  // MT5 positions use the broker's raw symbol ("XAUUSD") while the
+  // dashboard keys markets by the requested name ("XAUUSDm"). Compare
+  // them with the copy suffix removed, or real positions never match.
+  function sameMarket(a, b) {
+    const norm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/M$/, '');
+    const left = norm(a);
+    return !!left && left === norm(b);
+  }
+
+  // MT5 volumes are broker lots; one lot is `contract` units of the base
+  // asset (100 oz for gold, 100000 EUR for EURUSD). The tape prices a
+  // position in units, so real tickets need that multiplier or their
+  // notional and P&L come out 100x too small.
+  function contractSize(sym) {
+    const markets = (window.SoftradeXTerminal && window.SoftradeXTerminal.MARKETS) || {};
+    const key = Object.keys(markets).find((k) => sameMarket(k, sym));
+    const contract = key ? Number(markets[key].contract) : 0;
+    return contract > 0 ? contract : 1;
+  }
+
+  function importOpenPositions(snapshot) {
+    const positions = Array.isArray(snapshot && snapshot.positions) ? snapshot.positions : [];
+    const matching = positions.filter(position => sameMarket(position.symbol, activeSymbol));
+    const scanKey = `${activeSymbol}:${matching.map(position => position.ticket).sort().join(',')}`;
+    if (scanKey === snapshotScanSymbol) return;
+    snapshotScanSymbol = scanKey;
+
+    const matchingIds = new Set(matching.map(position => `mt5-position-${position.ticket}`));
+    for (const id of Array.from(importedPositionIds)) {
+      if (matchingIds.has(id)) continue;
+      const buyIndex = activeOpenBuyTrades.findIndex(trade => trade.id === id);
+      const sellIndex = activeOpenSellTrades.findIndex(trade => trade.id === id);
+      if (buyIndex >= 0) activeOpenBuyTrades.splice(buyIndex, 1);
+      if (sellIndex >= 0) activeOpenSellTrades.splice(sellIndex, 1);
+      trades = trades.filter(trade => trade.id !== id);
+      importedPositionIds.delete(id);
+    }
+
+    const existing = new Set(runningPositions().map(trade => String(trade.id)));
+    matching.forEach(position => {
+      const side = String(position.side || '').toLowerCase() === 'sell' || Number(position.type) === 1
+        ? 'SELL'
+        : 'BUY';
+      const price = Number(position.price_open) || 0;
+      const amount = Number(position.volume) || 0;
+      const contract = contractSize(activeSymbol);
+      if (!position.ticket || !price || !amount || existing.has(`mt5-position-${position.ticket}`)) return;
+      const profile = getProfile(activeSymbol);
+      addTrade({
+        id: `mt5-position-${position.ticket}`,
+        ts: Number(position.time || 0) * 1000 || Date.now(),
+        time: formatTime(new Date((Number(position.time || 0) * 1000) || Date.now())),
+        side,
+        action: 'OPEN',
+        closeType: '',
+        profit: Number(position.profit) || null,
+        price,
+        amount,
+        value: price * amount * contract,
+        contract,
+        unit: 'lots',   // MT5 volumes are broker lots, not ounces/shares
+        decimals: profile.decimals,
+        trader: 'MT5 Market Position',
+        isWhale: price * amount * contract >= 25000,
+        isOurAccount: true
+      });
+      importedPositionIds.add(`mt5-position-${position.ticket}`);
+    });
+    syncOpenVolumes();
+    updateStatsBar();
+
+    if (!liquidityStarted) {
+      liquidityStarted = true;
+      startSimulatedLiquidity();
+    }
   }
 
   function recordOpenTrade(trade) {
@@ -732,7 +823,7 @@ Grab Holdings
     trade.unit = trade.unit || 'Lots';
     trade.price = Number(trade.price) || 0;
     trade.amount = Number(trade.amount) || 0;
-    trade.value = Number(trade.value) || (trade.price * trade.amount) || 0;
+    trade.value = tradeNotional(trade);
     trade.ts = Number(trade.ts) || Date.now();
     trade.side = String(trade.side || 'BUY').toUpperCase();
     trade.market = activeSymbol || trade.market || '';
@@ -772,6 +863,9 @@ Grab Holdings
 
     trades.unshift(trade);
     if (trades.length > 1000) trades.pop();
+    if (window.SoftradeXTerminal && typeof window.SoftradeXTerminal.refresh === 'function') {
+      window.SoftradeXTerminal.refresh();
+    }
 
     updateStatsBar();
 
@@ -877,6 +971,22 @@ Grab Holdings
     return activeOpenBuyTrades.concat(activeOpenSellTrades);
   }
 
+  function getCandleFlow(candleTime, interval) {
+    const intervalSeconds = Number(interval) || 300;
+    const candleStart = Number(candleTime) < 100000000000
+      ? Number(candleTime) * 1000
+      : Number(candleTime);
+    const candleEnd = candleStart + intervalSeconds * 1000;
+    const flow = { buy: 0, sell: 0 };
+    runningPositions().forEach(trade => {
+      const ts = Number(trade.ts) < 100000000000 ? Number(trade.ts) * 1000 : Number(trade.ts);
+      if (ts < candleStart || ts >= candleEnd) return;
+      if (String(trade.side).toUpperCase() === 'BUY') flow.buy += tradeNotional(trade);
+      else flow.sell += tradeNotional(trade);
+    });
+    return flow;
+  }
+
   function renderRunningPositions(list) {
     const bodies = document.querySelectorAll('#tt-running-body, #tt-sidebar-running-body');
     if (!bodies.length) return;
@@ -950,7 +1060,7 @@ Grab Holdings
 
     const openAll = runningPositions();
     const openOnlyValue = openBuyVol + openSellVol;
-    const openValue = openAll.reduce((sum, t) => sum + (Number(t.value) || 0), 0);
+    const openValue = openAll.reduce((sum, t) => sum + tradeNotional(t), 0);
     const unrealized = openAll.reduce((sum, t) => sum + openPnlFor(t), 0);
     const turnover = buyVol + sellVol;
     const closed = winCount + lossCount;
@@ -996,46 +1106,50 @@ Grab Holdings
     const buyOpenFormatted = formatMoney(openBuyVol);
     const sellOpenFormatted = formatMoney(openSellVol);
 
-    // Update Topbar Open Volume Chips
-    const elBuyOpen = $('b-open-buy-val');
-    if (elBuyOpen) {
-      if (elBuyOpen.textContent !== buyOpenFormatted) {
-        const isUp = openBuyVol >= (elBuyOpen._prevVal || 0);
-        elBuyOpen.textContent = buyOpenFormatted;
-        elBuyOpen._prevVal = openBuyVol;
-        elBuyOpen.classList.remove('flash-up', 'flash-down');
-        void elBuyOpen.offsetWidth;
-        elBuyOpen.classList.add(isUp ? 'flash-up' : 'flash-down');
-        setTimeout(() => elBuyOpen.classList.remove('flash-up', 'flash-down'), 250);
+    // The independent Binance terminal owns the chart chips when its bridge is live.
+    const binanceFlowOwnsChips = window.BinanceOrderFlowBridge &&
+      window.BinanceOrderFlowBridge.active;
+    if (!binanceFlowOwnsChips) {
+      const elBuyOpen = $('b-open-buy-val');
+      if (elBuyOpen) {
+        if (elBuyOpen.textContent !== buyOpenFormatted) {
+          const isUp = openBuyVol >= (elBuyOpen._prevVal || 0);
+          elBuyOpen.textContent = buyOpenFormatted;
+          elBuyOpen._prevVal = openBuyVol;
+          elBuyOpen.classList.remove('flash-up', 'flash-down');
+          void elBuyOpen.offsetWidth;
+          elBuyOpen.classList.add(isUp ? 'flash-up' : 'flash-down');
+          setTimeout(() => elBuyOpen.classList.remove('flash-up', 'flash-down'), 250);
+        }
       }
-    }
-    const elSellOpen = $('b-open-sell-val');
-    if (elSellOpen) {
-      if (elSellOpen.textContent !== sellOpenFormatted) {
-        const isUp = openSellVol >= (elSellOpen._prevVal || 0);
-        elSellOpen.textContent = sellOpenFormatted;
-        elSellOpen._prevVal = openSellVol;
-        elSellOpen.classList.remove('flash-up', 'flash-down');
-        void elSellOpen.offsetWidth;
-        elSellOpen.classList.add(isUp ? 'flash-up' : 'flash-down');
-        setTimeout(() => elSellOpen.classList.remove('flash-up', 'flash-down'), 250);
+      const elSellOpen = $('b-open-sell-val');
+      if (elSellOpen) {
+        if (elSellOpen.textContent !== sellOpenFormatted) {
+          const isUp = openSellVol >= (elSellOpen._prevVal || 0);
+          elSellOpen.textContent = sellOpenFormatted;
+          elSellOpen._prevVal = openSellVol;
+          elSellOpen.classList.remove('flash-up', 'flash-down');
+          void elSellOpen.offsetWidth;
+          elSellOpen.classList.add(isUp ? 'flash-up' : 'flash-down');
+          setTimeout(() => elSellOpen.classList.remove('flash-up', 'flash-down'), 250);
+        }
       }
-    }
 
-    document.querySelectorAll('.b-open-buy-val').forEach(el => {
-      if (el !== elBuyOpen) el.textContent = buyOpenFormatted;
-    });
-    document.querySelectorAll('.b-open-sell-val').forEach(el => {
-      if (el !== elSellOpen) el.textContent = sellOpenFormatted;
-    });
+      document.querySelectorAll('.b-open-buy-val').forEach(el => {
+        if (el !== elBuyOpen) el.textContent = buyOpenFormatted;
+      });
+      document.querySelectorAll('.b-open-sell-val').forEach(el => {
+        if (el !== elSellOpen) el.textContent = sellOpenFormatted;
+      });
 
-    const buyChip = $('b-open-buy-chip');
-    if (buyChip) {
-      buyChip.title = `Active Open Buyers: ${buyOpenFormatted} (${openBuyCount} open positions)\nDecreases on Close / TP / SL`;
-    }
-    const sellChip = $('b-open-sell-chip');
-    if (sellChip) {
-      sellChip.title = `Active Open Sellers: ${sellOpenFormatted} (${openSellCount} open positions)\nDecreases on Close / TP / SL`;
+      const buyChip = $('b-open-buy-chip');
+      if (buyChip) {
+        buyChip.title = `Active Open Buyers: ${buyOpenFormatted} (${openBuyCount} open positions)\nDecreases on Close / TP / SL`;
+      }
+      const sellChip = $('b-open-sell-chip');
+      if (sellChip) {
+        sellChip.title = `Active Open Sellers: ${sellOpenFormatted} (${openSellCount} open positions)\nDecreases on Close / TP / SL`;
+      }
     }
 
     // Update all matching elements across all terminal instances
@@ -1235,13 +1349,17 @@ Grab Holdings
       // Small jitter around current price
       const tickSpread = (price * 0.00012);
 
-      // Dynamic realistic mix between OPEN and CLOSE
-      const totalOpen = activeOpenBuyTrades.length + activeOpenSellTrades.length;
+      // Dynamic realistic mix between OPEN and CLOSE. Real MT5 positions are
+      // never part of the simulated book: closing one here would only drop
+      // the local row while the position still runs on the broker.
+      const simBuyPool = activeOpenBuyTrades.filter(t => !importedPositionIds.has(String(t.id)));
+      const simSellPool = activeOpenSellTrades.filter(t => !importedPositionIds.has(String(t.id)));
+      const totalOpen = simBuyPool.length + simSellPool.length;
       let closeProb = 0.35;
       if (totalOpen < 10) closeProb = 0.12;
       else if (totalOpen > 35) closeProb = 0.65;
 
-      const canClose = (activeOpenBuyTrades.length > 0 || activeOpenSellTrades.length > 0);
+      const canClose = totalOpen > 0;
       const isClose = canClose && (Math.random() < closeProb);
       const action = isClose ? 'CLOSE' : 'OPEN';
 
@@ -1249,14 +1367,14 @@ Grab Holdings
       let openTradeToClose = null;
 
       if (isClose) {
-        if (activeOpenBuyTrades.length > 0 && activeOpenSellTrades.length > 0) {
-          isBuy = Math.random() < (activeOpenBuyTrades.length / totalOpen);
-        } else if (activeOpenBuyTrades.length > 0) {
+        if (simBuyPool.length > 0 && simSellPool.length > 0) {
+          isBuy = Math.random() < (simBuyPool.length / totalOpen);
+        } else if (simBuyPool.length > 0) {
           isBuy = true;
         } else {
           isBuy = false;
         }
-        const pool = isBuy ? activeOpenBuyTrades : activeOpenSellTrades;
+        const pool = isBuy ? simBuyPool : simSellPool;
         const pickIdx = Math.floor(Math.random() * Math.min(pool.length, 6));
         openTradeToClose = pool[pickIdx];
       } else {
@@ -1379,7 +1497,7 @@ Grab Holdings
   // The tape is market flow only: own-account trades are never shown here.
   function onPriceTick(sym, price, bid, ask) {
     if (!sym || !activeSymbol) return;
-    if (sym.toUpperCase() !== activeSymbol.toUpperCase()) return;
+    if (!sameMarket(sym, activeSymbol)) return;
     if (price && price > 0) lastPrice = price;
   }
 
@@ -1412,80 +1530,6 @@ Grab Holdings
       statText.textContent = `Syncing to Market: ${cleanSym.toUpperCase()}...`;
     });
 
-    // Seed Initial Realistic Open Trades on Market Connect
-    function seedInitialTrades(sym, basePrice) {
-      const pProfile = getProfile(sym);
-      const pPrice = Number(basePrice) || defaultPriceFor(sym);
-
-      const seedDefs = [
-        { side: 'BUY', trader: 'Momentum Bot', factor: 0.35, secAgo: 72 },
-        { side: 'BUY', trader: 'Exness LP', factor: 0.08, secAgo: 65 },
-        { side: 'BUY', trader: 'Grid Master', factor: 0.22, secAgo: 58 },
-        { side: 'SELL', trader: 'HFT Flow #9', factor: 0.15, secAgo: 52 },
-        { side: 'BUY', trader: 'Exness LP', factor: 0.40, secAgo: 45 },
-        { side: 'BUY', trader: 'Arbitrage-X', factor: 0.55, secAgo: 38 },
-        { side: 'BUY', trader: 'Whale Fund #7', factor: 1.85, secAgo: 30, isWhale: true },
-        { side: 'SELL', trader: 'Wintermute Flow', factor: 0.25, secAgo: 24 },
-        { side: 'SELL', trader: 'Citadel-Desk', factor: 0.38, secAgo: 18 },
-        { side: 'SELL', trader: 'Apex Trader', factor: 0.12, secAgo: 12 },
-        { side: 'BUY', trader: 'Retail Swift', factor: 0.60, secAgo: 6 }
-      ];
-      const useBdRoster = isBdMarket(sym);
-      /* Previous running positions seeded on entry: on the SoftradeX dashboard
-       * they carry the existing desk names plus BD companies / banks and a
-       * sample of the newly supplied global names, so all three populations
-       * are visible from the first frame. The global pointer is shared with
-       * live flow, so the tape continues through the list without immediately
-       * repeating the seeded names. */
-      const bdSeedPool = bdRoster().length ? bdRoster() : BD_TRADER_FALLBACK;
-      const seedTraderKinds = [
-        'global', 'bd', 'global', 'desk', 'bd', 'global',
-        'desk', 'bd', 'global', 'desk', 'global'
-      ];
-      let bdSeedPointer = 0;
-      let seedGlobalPointer = 0;
-      let seedIndex = 0;
-
-      const now = Date.now();
-      for (const def of seedDefs) {
-        const tSpread = (pPrice * 0.0001);
-        const isB = def.side === 'BUY';
-        const p = isB ? (pPrice - Math.random() * tSpread) : (pPrice + Math.random() * tSpread);
-        const qty = Number((pProfile.minQty + (pProfile.maxQty - pProfile.minQty) * (def.factor * 0.12)).toFixed(pProfile.decimals <= 2 ? 4 : 2)) || pProfile.minQty;
-        const val = p * qty;
-        const tradeTime = formatTime(new Date(now - def.secAgo * 1000));
-
-        addTrade({
-          id: 'seed-' + Math.random().toString(36).substring(2, 9),
-          ts: now - def.secAgo * 1000,
-          time: tradeTime,
-          side: def.side,
-          action: 'OPEN',
-          closeType: '',
-          profit: null,
-          price: p,
-          amount: qty,
-          value: val,
-          unit: pProfile.unit,
-          decimals: pProfile.decimals,
-          trader: useBdRoster
-            ? pickTrader()
-            : (seedTraderKinds[seedIndex] === 'global'
-                ? SOFTX_GLOBAL_TRADERS[seedGlobalPointer++ % SOFTX_GLOBAL_TRADERS.length]
-                : (seedTraderKinds[seedIndex] === 'bd'
-                    ? bdSeedPool[bdSeedPointer++ % bdSeedPool.length]
-                    : def.trader)),
-          isWhale: !!def.isWhale,
-          isOurAccount: false
-        });
-        seedIndex++;
-      }
-
-      /* Live flow continues right after the names sampled into the previous
-       * running positions, so the seeded global names are not repeated first. */
-      if (!useBdRoster) softxGlobalPointer = seedGlobalPointer;
-    }
-
     // Reset EVERYTHING for the new market so no other-market trace remains,
     // except on the BD page, where a combined DSE order book is expected:
     // the previous running positions must stay visible next to the new ones.
@@ -1509,6 +1553,7 @@ Grab Holdings
     } else {
       activeOpenBuyTrades.length = 0;
       activeOpenSellTrades.length = 0;
+      importedPositionIds.clear();
       openBuyVol = 0;
       openSellVol = 0;
       openBuyCount = 0;
@@ -1526,7 +1571,8 @@ Grab Holdings
       `;
     });
 
-    seedInitialTrades(cleanSym, lastPrice);
+    snapshotScanSymbol = '';
+    liquidityStarted = false;
     updateStatsBar();
 
     // Check for Binance pair counterpart
@@ -1546,7 +1592,8 @@ Grab Holdings
       });
     }
 
-    startSimulatedLiquidity();
+    // onSnapshot() starts the new-order stream after scanning existing MT5
+    // positions. If the account is not connected, it starts with no old rows.
   }
 
   // --- Initialize Terminal UI & Event Listeners ---
@@ -1725,10 +1772,13 @@ Grab Holdings
     switchMarket,
     addTrade,
     onPriceTick,
-    onSnapshot: (snap) => {},          // legacy hook — account data is never shown
+    onSnapshot: (snap) => {
+      importOpenPositions(snap);
+    },
     onTradeClosed,                      // no-op by design (own trades stay out)
     getActiveSymbol: () => activeSymbol,
     getOpenVolume: () => ({ openBuyVol, openSellVol, openBuyCount, openSellCount }),
+    getCandleFlow,
     getAnalysisStats: () => ({
       realizedPnl,
       unrealizedPnl: openPnlTotal(),

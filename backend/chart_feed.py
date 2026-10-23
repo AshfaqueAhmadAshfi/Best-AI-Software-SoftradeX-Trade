@@ -78,30 +78,232 @@ _TF_NAME = {
 
 # Exness instrument catalogue for the chart. The first candidate that exists on
 # the connected account wins; a missing market is simply not offered.
+# Full Exness catalogue: Metals, Crypto, Forex, Energy, Indices, Stocks.
 CATALOG: List[Dict[str, Any]] = [
+    # ──────────────────── METALS ────────────────────
     {"symbol": "XAUUSDm", "alts": ["XAUUSDm", "XAUUSD247m", "XAUUSD"],
      "label": "GOLD", "pair": "USD", "icon": "🟡", "unit": "oz", "kind": "metals"},
-    {"symbol": "BTCUSDTm", "alts": ["BTCUSDTm", "BTCUSDm"],
+    {"symbol": "XAGUSDm", "alts": ["XAGUSDm", "XAGUSD"],
+     "label": "SILVER", "pair": "USD", "icon": "⚪", "unit": "oz", "kind": "metals"},
+    {"symbol": "XPTUSDm", "alts": ["XPTUSDm", "XPTUSD"],
+     "label": "PLATINUM", "pair": "USD", "icon": "🔘", "unit": "oz", "kind": "metals"},
+    {"symbol": "XPDUSDm", "alts": ["XPDUSDm", "XPDUSD"],
+     "label": "PALLADIUM", "pair": "USD", "icon": "🪙", "unit": "oz", "kind": "metals"},
+    {"symbol": "XAUEURm", "alts": ["XAUEURm", "XAUEUR"],
+     "label": "GOLD", "pair": "EUR", "icon": "🟡", "unit": "oz", "kind": "metals"},
+    {"symbol": "XAUGBPm", "alts": ["XAUGBPm", "XAUGBP"],
+     "label": "GOLD", "pair": "GBP", "icon": "🟡", "unit": "oz", "kind": "metals"},
+    {"symbol": "XAUAUDm", "alts": ["XAUAUDm", "XAUAUD"],
+     "label": "GOLD", "pair": "AUD", "icon": "🟡", "unit": "oz", "kind": "metals"},
+    # ──────────────────── CRYPTO ────────────────────
+    {"symbol": "BTCUSDTm", "alts": ["BTCUSDTm", "BTCUSDm", "BTCUSD"],
      "label": "BTC", "pair": "USDT", "icon": "🟠", "unit": "BTC", "kind": "crypto"},
-    {"symbol": "ETHUSDm", "alts": ["ETHUSDm", "ETHUSDTm"],
+    {"symbol": "ETHUSDm", "alts": ["ETHUSDm", "ETHUSDTm", "ETHUSD"],
      "label": "ETH", "pair": "USD", "icon": "🔷", "unit": "ETH", "kind": "crypto"},
+    {"symbol": "XRPUSDm", "alts": ["XRPUSDm", "XRPUSDTm", "XRPUSD"],
+     "label": "XRP", "pair": "USD", "icon": "⚫", "unit": "XRP", "kind": "crypto"},
+    {"symbol": "SOLUSDm", "alts": ["SOLUSDm", "SOLUSDTm", "SOLUSD"],
+     "label": "SOL", "pair": "USD", "icon": "🟣", "unit": "SOL", "kind": "crypto"},
+    {"symbol": "DOGEUSDm", "alts": ["DOGEUSDm", "DOGEUSDTm", "DOGEUSD"],
+     "label": "DOGE", "pair": "USD", "icon": "🐕", "unit": "DOGE", "kind": "crypto"},
+    {"symbol": "LTCUSDm", "alts": ["LTCUSDm", "LTCUSDTm", "LTCUSD"],
+     "label": "LTC", "pair": "USD", "icon": "🔵", "unit": "LTC", "kind": "crypto"},
+    {"symbol": "BCHUSDm", "alts": ["BCHUSDm", "BCHUSDTm", "BCHUSD"],
+     "label": "BCH", "pair": "USD", "icon": "🟢", "unit": "BCH", "kind": "crypto"},
+    {"symbol": "LINKUSDm", "alts": ["LINKUSDm", "LINKUSDTm", "LINKUSD"],
+     "label": "LINK", "pair": "USD", "icon": "🔗", "unit": "LINK", "kind": "crypto"},
+    {"symbol": "AVAXUSDm", "alts": ["AVAXUSDm", "AVAXUSDTm", "AVAXUSD"],
+     "label": "AVAX", "pair": "USD", "icon": "🔺", "unit": "AVAX", "kind": "crypto"},
+    {"symbol": "DOTUSDm", "alts": ["DOTUSDm", "DOTUSDTm", "DOTUSD"],
+     "label": "DOT", "pair": "USD", "icon": "⬡", "unit": "DOT", "kind": "crypto"},
+    {"symbol": "MATICUSDm", "alts": ["MATICUSDm", "MATICUSDTm", "MATICUSD"],
+     "label": "MATIC", "pair": "USD", "icon": "🟪", "unit": "MATIC", "kind": "crypto"},
+    {"symbol": "UNIUSDm", "alts": ["UNIUSDm", "UNIUSDTm", "UNIUSD"],
+     "label": "UNI", "pair": "USD", "icon": "🦄", "unit": "UNI", "kind": "crypto"},
+    {"symbol": "ADAUSDm", "alts": ["ADAUSDm", "ADAUSDTm", "ADAUSD"],
+     "label": "ADA", "pair": "USD", "icon": "🔵", "unit": "ADA", "kind": "crypto"},
+    {"symbol": "SHIBUSDm", "alts": ["SHIBUSDm", "SHIBUSDTm", "SHIBUSD"],
+     "label": "SHIB", "pair": "USD", "icon": "🐶", "unit": "SHIB", "kind": "crypto"},
+    {"symbol": "BNBUSDm", "alts": ["BNBUSDm", "BNBUSDTm", "BNBUSD"],
+     "label": "BNB", "pair": "USD", "icon": "💛", "unit": "BNB", "kind": "crypto"},
+    {"symbol": "ATOMUSDm", "alts": ["ATOMUSDm", "ATOMUSDTm", "ATOMUSD"],
+     "label": "ATOM", "pair": "USD", "icon": "⚛️", "unit": "ATOM", "kind": "crypto"},
+    {"symbol": "XLMUSDm", "alts": ["XLMUSDm", "XLMUSDTm", "XLMUSD"],
+     "label": "XLM", "pair": "USD", "icon": "⭐", "unit": "XLM", "kind": "crypto"},
+    {"symbol": "NEARUSDm", "alts": ["NEARUSDm", "NEARUSDTm", "NEARUSD"],
+     "label": "NEAR", "pair": "USD", "icon": "🌐", "unit": "NEAR", "kind": "crypto"},
+    {"symbol": "APTUSDm", "alts": ["APTUSDm", "APTUSDTm", "APTUSD"],
+     "label": "APT", "pair": "USD", "icon": "🔶", "unit": "APT", "kind": "crypto"},
+    {"symbol": "OPUSDm", "alts": ["OPUSDm", "OPUSDTm", "OPUSD"],
+     "label": "OP", "pair": "USD", "icon": "🔴", "unit": "OP", "kind": "crypto"},
+    {"symbol": "ARBUSDm", "alts": ["ARBUSDm", "ARBUSDTm", "ARBUSD"],
+     "label": "ARB", "pair": "USD", "icon": "🔹", "unit": "ARB", "kind": "crypto"},
+    # ──────────────────── FOREX MAJORS ────────────────────
     {"symbol": "EURUSDm", "alts": ["EURUSDm", "EURUSD"],
      "label": "EUR", "pair": "USD", "icon": "💶", "unit": "lots", "kind": "forex"},
     {"symbol": "GBPUSDm", "alts": ["GBPUSDm", "GBPUSD"],
      "label": "GBP", "pair": "USD", "icon": "💷", "unit": "lots", "kind": "forex"},
     {"symbol": "USDJPYm", "alts": ["USDJPYm", "USDJPY"],
      "label": "USD", "pair": "JPY", "icon": "💴", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDCHFm", "alts": ["USDCHFm", "USDCHF"],
+     "label": "USD", "pair": "CHF", "icon": "🇨🇭", "unit": "lots", "kind": "forex"},
+    {"symbol": "AUDUSDm", "alts": ["AUDUSDm", "AUDUSD"],
+     "label": "AUD", "pair": "USD", "icon": "🇦🇺", "unit": "lots", "kind": "forex"},
+    {"symbol": "NZDUSDm", "alts": ["NZDUSDm", "NZDUSD"],
+     "label": "NZD", "pair": "USD", "icon": "🇳🇿", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDCADm", "alts": ["USDCADm", "USDCAD"],
+     "label": "USD", "pair": "CAD", "icon": "🇨🇦", "unit": "lots", "kind": "forex"},
+    # ──────────────────── FOREX CROSSES ────────────────────
+    {"symbol": "EURGBPm", "alts": ["EURGBPm", "EURGBP"],
+     "label": "EUR", "pair": "GBP", "icon": "💶", "unit": "lots", "kind": "forex"},
+    {"symbol": "EURJPYm", "alts": ["EURJPYm", "EURJPY"],
+     "label": "EUR", "pair": "JPY", "icon": "💶", "unit": "lots", "kind": "forex"},
+    {"symbol": "GBPJPYm", "alts": ["GBPJPYm", "GBPJPY"],
+     "label": "GBP", "pair": "JPY", "icon": "💷", "unit": "lots", "kind": "forex"},
+    {"symbol": "AUDJPYm", "alts": ["AUDJPYm", "AUDJPY"],
+     "label": "AUD", "pair": "JPY", "icon": "🇦🇺", "unit": "lots", "kind": "forex"},
+    {"symbol": "NZDJPYm", "alts": ["NZDJPYm", "NZDJPY"],
+     "label": "NZD", "pair": "JPY", "icon": "🇳🇿", "unit": "lots", "kind": "forex"},
+    {"symbol": "CADJPYm", "alts": ["CADJPYm", "CADJPY"],
+     "label": "CAD", "pair": "JPY", "icon": "🇨🇦", "unit": "lots", "kind": "forex"},
+    {"symbol": "CHFJPYm", "alts": ["CHFJPYm", "CHFJPY"],
+     "label": "CHF", "pair": "JPY", "icon": "🇨🇭", "unit": "lots", "kind": "forex"},
+    {"symbol": "EURAUDm", "alts": ["EURAUDm", "EURAUD"],
+     "label": "EUR", "pair": "AUD", "icon": "💶", "unit": "lots", "kind": "forex"},
+    {"symbol": "EURCADm", "alts": ["EURCADm", "EURCAD"],
+     "label": "EUR", "pair": "CAD", "icon": "💶", "unit": "lots", "kind": "forex"},
+    {"symbol": "EURCHFm", "alts": ["EURCHFm", "EURCHF"],
+     "label": "EUR", "pair": "CHF", "icon": "💶", "unit": "lots", "kind": "forex"},
+    {"symbol": "EURNZDm", "alts": ["EURNZDm", "EURNZD"],
+     "label": "EUR", "pair": "NZD", "icon": "💶", "unit": "lots", "kind": "forex"},
+    {"symbol": "GBPAUDm", "alts": ["GBPAUDm", "GBPAUD"],
+     "label": "GBP", "pair": "AUD", "icon": "💷", "unit": "lots", "kind": "forex"},
+    {"symbol": "GBPCADm", "alts": ["GBPCADm", "GBPCAD"],
+     "label": "GBP", "pair": "CAD", "icon": "💷", "unit": "lots", "kind": "forex"},
+    {"symbol": "GBPCHFm", "alts": ["GBPCHFm", "GBPCHF"],
+     "label": "GBP", "pair": "CHF", "icon": "💷", "unit": "lots", "kind": "forex"},
+    {"symbol": "GBPNZDm", "alts": ["GBPNZDm", "GBPNZD"],
+     "label": "GBP", "pair": "NZD", "icon": "💷", "unit": "lots", "kind": "forex"},
+    {"symbol": "AUDCADm", "alts": ["AUDCADm", "AUDCAD"],
+     "label": "AUD", "pair": "CAD", "icon": "🇦🇺", "unit": "lots", "kind": "forex"},
+    {"symbol": "AUDCHFm", "alts": ["AUDCHFm", "AUDCHF"],
+     "label": "AUD", "pair": "CHF", "icon": "🇦🇺", "unit": "lots", "kind": "forex"},
+    {"symbol": "AUDNZDm", "alts": ["AUDNZDm", "AUDNZD"],
+     "label": "AUD", "pair": "NZD", "icon": "🇦🇺", "unit": "lots", "kind": "forex"},
+    {"symbol": "NZDCADm", "alts": ["NZDCADm", "NZDCAD"],
+     "label": "NZD", "pair": "CAD", "icon": "🇳🇿", "unit": "lots", "kind": "forex"},
+    {"symbol": "NZDCHFm", "alts": ["NZDCHFm", "NZDCHF"],
+     "label": "NZD", "pair": "CHF", "icon": "🇳🇿", "unit": "lots", "kind": "forex"},
+    {"symbol": "CADCHFm", "alts": ["CADCHFm", "CADCHF"],
+     "label": "CAD", "pair": "CHF", "icon": "🇨🇦", "unit": "lots", "kind": "forex"},
+    # ──────────────────── FOREX EXOTICS ────────────────────
+    {"symbol": "USDSGDm", "alts": ["USDSGDm", "USDSGD"],
+     "label": "USD", "pair": "SGD", "icon": "🇸🇬", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDHKDm", "alts": ["USDHKDm", "USDHKD"],
+     "label": "USD", "pair": "HKD", "icon": "🇭🇰", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDTRYm", "alts": ["USDTRYm", "USDTRY"],
+     "label": "USD", "pair": "TRY", "icon": "🇹🇷", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDZARm", "alts": ["USDZARm", "USDZAR"],
+     "label": "USD", "pair": "ZAR", "icon": "🇿🇦", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDMXNm", "alts": ["USDMXNm", "USDMXN"],
+     "label": "USD", "pair": "MXN", "icon": "🇲🇽", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDCNHm", "alts": ["USDCNHm", "USDCNH"],
+     "label": "USD", "pair": "CNH", "icon": "🇨🇳", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDSEKm", "alts": ["USDSEKm", "USDSEK"],
+     "label": "USD", "pair": "SEK", "icon": "🇸🇪", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDNOKm", "alts": ["USDNOKm", "USDNOK"],
+     "label": "USD", "pair": "NOK", "icon": "🇳🇴", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDDKKm", "alts": ["USDDKKm", "USDDKK"],
+     "label": "USD", "pair": "DKK", "icon": "🇩🇰", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDPLNm", "alts": ["USDPLNm", "USDPLN"],
+     "label": "USD", "pair": "PLN", "icon": "🇵🇱", "unit": "lots", "kind": "forex"},
+    {"symbol": "USDTHBm", "alts": ["USDTHBm", "USDTHB"],
+     "label": "USD", "pair": "THB", "icon": "🇹🇭", "unit": "lots", "kind": "forex"},
+    {"symbol": "EURTRYm", "alts": ["EURTRYm", "EURTRY"],
+     "label": "EUR", "pair": "TRY", "icon": "💶", "unit": "lots", "kind": "forex"},
+    {"symbol": "EURSGDm", "alts": ["EURSGDm", "EURSGD"],
+     "label": "EUR", "pair": "SGD", "icon": "💶", "unit": "lots", "kind": "forex"},
+    # ──────────────────── ENERGY ────────────────────
     {"symbol": "USOILm", "alts": ["USOILm", "XTIUSDm", "USOIL", "XTIUSD"],
-     "label": "OIL", "pair": "USD", "icon": "🛢", "unit": "bbl", "kind": "energy"},
+     "label": "WTI OIL", "pair": "USD", "icon": "🛢️", "unit": "bbl", "kind": "energy"},
+    {"symbol": "UKOILm", "alts": ["UKOILm", "XBRUSDm", "UKOIL", "XBRUSD"],
+     "label": "BRENT", "pair": "USD", "icon": "🛢️", "unit": "bbl", "kind": "energy"},
+    {"symbol": "XNGUSDm", "alts": ["XNGUSDm", "NGASm", "XNGUSD", "NGAS"],
+     "label": "NAT GAS", "pair": "USD", "icon": "🔥", "unit": "mmbtu", "kind": "energy"},
+    # ──────────────────── INDICES ────────────────────
     {"symbol": "USTECm", "alts": ["USTECm", "NAS100m", "US100m", "USTEC"],
      "label": "US100", "pair": "USD", "icon": "📈", "unit": "index", "kind": "indices"},
-    {"symbol": "XAGUSDm", "alts": ["XAGUSDm", "XAGUSD"],
-     "label": "SILVER", "pair": "USD", "icon": "⚪", "unit": "oz", "kind": "metals"},
+    {"symbol": "US500m", "alts": ["US500m", "SPX500m", "US500", "SPXm"],
+     "label": "US500", "pair": "USD", "icon": "📊", "unit": "index", "kind": "indices"},
+    {"symbol": "US30m", "alts": ["US30m", "DJ30m", "US30", "DJIm"],
+     "label": "US30", "pair": "USD", "icon": "🏛️", "unit": "index", "kind": "indices"},
+    {"symbol": "DE30m", "alts": ["DE30m", "DE40m", "DAXm", "GER40m", "DE30", "GER40"],
+     "label": "DAX", "pair": "EUR", "icon": "🇩🇪", "unit": "index", "kind": "indices"},
+    {"symbol": "UK100m", "alts": ["UK100m", "FTSE100m", "UK100"],
+     "label": "UK100", "pair": "GBP", "icon": "🇬🇧", "unit": "index", "kind": "indices"},
+    {"symbol": "FR40m", "alts": ["FR40m", "FRA40m", "FR40"],
+     "label": "FR40", "pair": "EUR", "icon": "🇫🇷", "unit": "index", "kind": "indices"},
+    {"symbol": "JP225m", "alts": ["JP225m", "JPN225m", "JP225"],
+     "label": "JP225", "pair": "JPY", "icon": "🇯🇵", "unit": "index", "kind": "indices"},
+    {"symbol": "AUS200m", "alts": ["AUS200m", "AU200m", "AUS200"],
+     "label": "AUS200", "pair": "AUD", "icon": "🇦🇺", "unit": "index", "kind": "indices"},
+    {"symbol": "HK50m", "alts": ["HK50m", "HK50"],
+     "label": "HK50", "pair": "HKD", "icon": "🇭🇰", "unit": "index", "kind": "indices"},
+    {"symbol": "STOXX50m", "alts": ["STOXX50m", "EU50m", "STOXX50"],
+     "label": "EU50", "pair": "EUR", "icon": "🇪🇺", "unit": "index", "kind": "indices"},
+    {"symbol": "US2000m", "alts": ["US2000m", "RUSS2000m", "US2000"],
+     "label": "US2000", "pair": "USD", "icon": "📉", "unit": "index", "kind": "indices"},
+    {"symbol": "ChinaHm", "alts": ["ChinaHm", "ChinaA50m", "ChinaH"],
+     "label": "CHINA-H", "pair": "HKD", "icon": "🇨🇳", "unit": "index", "kind": "indices"},
+    # ──────────────────── STOCKS (US CFDs) ────────────────────
+    {"symbol": "AAPLm", "alts": ["AAPLm", "AAPL"],
+     "label": "APPLE", "pair": "USD", "icon": "🍎", "unit": "shares", "kind": "stocks"},
+    {"symbol": "MSFTm", "alts": ["MSFTm", "MSFT"],
+     "label": "MSFT", "pair": "USD", "icon": "🪟", "unit": "shares", "kind": "stocks"},
+    {"symbol": "AMZNm", "alts": ["AMZNm", "AMZN"],
+     "label": "AMZN", "pair": "USD", "icon": "📦", "unit": "shares", "kind": "stocks"},
+    {"symbol": "GOOGLm", "alts": ["GOOGLm", "GOOGm", "GOOGL"],
+     "label": "GOOGLE", "pair": "USD", "icon": "🔍", "unit": "shares", "kind": "stocks"},
+    {"symbol": "TSLAm", "alts": ["TSLAm", "TSLA"],
+     "label": "TESLA", "pair": "USD", "icon": "⚡", "unit": "shares", "kind": "stocks"},
+    {"symbol": "NVDAm", "alts": ["NVDAm", "NVDA"],
+     "label": "NVIDIA", "pair": "USD", "icon": "🖥️", "unit": "shares", "kind": "stocks"},
+    {"symbol": "METAm", "alts": ["METAm", "META", "FBm"],
+     "label": "META", "pair": "USD", "icon": "👤", "unit": "shares", "kind": "stocks"},
+    {"symbol": "JPMm", "alts": ["JPMm", "JPM"],
+     "label": "JPMORGAN", "pair": "USD", "icon": "🏦", "unit": "shares", "kind": "stocks"},
+    {"symbol": "BAm", "alts": ["BAm", "BA"],
+     "label": "BOEING", "pair": "USD", "icon": "✈️", "unit": "shares", "kind": "stocks"},
+    {"symbol": "DISm", "alts": ["DISm", "DIS"],
+     "label": "DISNEY", "pair": "USD", "icon": "🏰", "unit": "shares", "kind": "stocks"},
+    {"symbol": "NKEm", "alts": ["NKEm", "NKE"],
+     "label": "NIKE", "pair": "USD", "icon": "👟", "unit": "shares", "kind": "stocks"},
+    {"symbol": "COINm", "alts": ["COINm", "COIN"],
+     "label": "COINBASE", "pair": "USD", "icon": "🪙", "unit": "shares", "kind": "stocks"},
+    {"symbol": "NEFLm", "alts": ["NEFLm", "NFLXm", "NFLX"],
+     "label": "NETFLIX", "pair": "USD", "icon": "🎬", "unit": "shares", "kind": "stocks"},
+    {"symbol": "PFEm", "alts": ["PFEm", "PFE"],
+     "label": "PFIZER", "pair": "USD", "icon": "💊", "unit": "shares", "kind": "stocks"},
+    {"symbol": "INTCm", "alts": ["INTCm", "INTC"],
+     "label": "INTEL", "pair": "USD", "icon": "🔲", "unit": "shares", "kind": "stocks"},
+    {"symbol": "AMDm", "alts": ["AMDm", "AMD"],
+     "label": "AMD", "pair": "USD", "icon": "🔳", "unit": "shares", "kind": "stocks"},
+    {"symbol": "Vm", "alts": ["Vm", "V"],
+     "label": "VISA", "pair": "USD", "icon": "💳", "unit": "shares", "kind": "stocks"},
+    {"symbol": "MAm", "alts": ["MAm", "MA"],
+     "label": "MASTERCARD", "pair": "USD", "icon": "💳", "unit": "shares", "kind": "stocks"},
+    {"symbol": "KOm", "alts": ["KOm", "KO"],
+     "label": "COCA-COLA", "pair": "USD", "icon": "🥤", "unit": "shares", "kind": "stocks"},
+    {"symbol": "WMTm", "alts": ["WMTm", "WMT"],
+     "label": "WALMART", "pair": "USD", "icon": "🛒", "unit": "shares", "kind": "stocks"},
+    {"symbol": "XOMm", "alts": ["XOMm", "XOM"],
+     "label": "EXXON", "pair": "USD", "icon": "⛽", "unit": "shares", "kind": "stocks"},
 ]
 
-# How often the sampler wakes up (20 fps). MT5 itself groups ticks, so this is
-# the fastest rate that still produces new data on the Exness demo feed.
-TICK_INTERVAL = 0.05
+# How often the sampler wakes up. MT5 quotes are normally grouped into a few
+# updates per second, so polling at 10 fps keeps the UI live without saturating
+# the terminal's single IPC pipe.
+TICK_INTERVAL = 0.1
 # Tick-volume (participation) is read from the live M1 bar at this rate.
 VOLUME_INTERVAL = 0.1
 # A big print needs a price impulse this many times larger than the recent
@@ -132,56 +334,99 @@ def _tf_const(tf: str) -> int:
 _ATTACH_TTL = 1.0
 _attach_checked_at: float = 0.0
 _attach_checked_for: Any = None
+_last_init_attempt: float = 0.0
+_last_init_for: Any = None
+_init_cooldown: float = 4.0
 
 
-def _ensure_terminal() -> None:
-    """Attach to the running Exness terminal once; never logs in or out.
-
-    The attach probe is cached for ``_ATTACH_TTL`` seconds: the sampler calls
-    this up to 20 times per second per symbol, and an uncached
-    ``terminal_info()`` on every frame would steal IPC time from the trading
-    engine (the chart then lags behind the engine's own reads).
-    """
-    global _attach_checked_at, _attach_checked_for
+def _try_ensure_terminal() -> bool:
+    """Non-blocking, cached terminal attach probe. Returns True if MT5 is live."""
+    global _attach_checked_at, _attach_checked_for, _last_init_attempt, _last_init_for
     if mt5 is None:
-        raise ChartUnavailable("MetaTrader5 package is not installed")
+        return False
     now = time.monotonic()
     if (_attach_checked_for is mt5
             and (now - _attach_checked_at) < _ATTACH_TTL):
-        return
+        return True
     with IPC_LOCK:
-        info = mt5.terminal_info()
-        if info is not None:
-            _attach_checked_for = mt5
-            _attach_checked_at = now
-            return
-        # Prefer the terminal the trading engine is logged into - a blind
-        # initialize() could auto-attach a different terminal/account.
+        try:
+            info = mt5.terminal_info()
+            if info is not None:
+                _attach_checked_for = mt5
+                _attach_checked_at = now
+                return True
+        except Exception:
+            pass
+        if _last_init_for is mt5 and (now - _last_init_attempt) < _init_cooldown:
+            return False
+        _last_init_attempt = now
+        _last_init_for = mt5
         kwargs: Dict[str, Any] = {}
         path = preferred_terminal_path()
         if path:
             kwargs["path"] = path
-        if not mt5.initialize(**kwargs):
-            code, msg = mt5.last_error()
-            raise ChartUnavailable(
-                "Exness terminal is not reachable (%s: %s)" % (code, msg)
-            )
-    _attach_checked_for = mt5
-    _attach_checked_at = now
+        try:
+            # 1200ms timeout prevents freezing API handlers when MT5 is offline
+            if mt5.initialize(timeout=1200, **kwargs):
+                _attach_checked_for = mt5
+                _attach_checked_at = now
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _ensure_terminal() -> None:
+    """Best effort attach to MT5 terminal without ever throwing or freezing."""
+    _try_ensure_terminal()
 
 
 def _symbol_info(symbol: str) -> Optional[Any]:
-    _ensure_terminal()
+    if not _try_ensure_terminal():
+        return None
     with IPC_LOCK:
-        info = mt5.symbol_info(symbol)
-        if info is None:
+        try:
+            info = mt5.symbol_info(symbol)
+            if info is None:
+                return None
+            if not getattr(info, "visible", True) or not getattr(info, "select", True):
+                try:
+                    mt5.symbol_select(symbol, True)
+                except Exception:
+                    pass
+            return info
+        except Exception:
             return None
-        if not getattr(info, "visible", True) or not getattr(info, "select", True):
-            try:
-                mt5.symbol_select(symbol, True)
-            except Exception:
-                pass
-        return info
+
+
+def _meta_from_spec_default(spec: Dict[str, Any], symbol: Optional[str] = None) -> Dict[str, Any]:
+    sym = symbol or spec["symbol"]
+    kind = spec.get("kind", "forex")
+    if kind == "forex":
+        digits = 3 if "JPY" in sym else 5
+    elif kind in ("crypto", "stocks"):
+        digits = 2
+    elif kind == "metals":
+        digits = 2 if "XAU" in sym else 3
+    else:
+        digits = 2
+    point = float(10 ** -digits)
+    return {
+        "symbol": sym,
+        "label": spec.get("label", sym),
+        "pair": spec.get("pair", "USD"),
+        "icon": spec.get("icon", "📊"),
+        "unit": spec.get("unit", "lots"),
+        "kind": spec.get("kind", "other"),
+        "alts": [str(a) for a in spec.get("alts", [sym])],
+        "description": f"{spec.get('label', sym)} / {spec.get('pair', 'USD')} · Exness MT5",
+        "digits": digits,
+        "point": point,
+        "spread_points": 10,
+        "contract": 1.0,
+        "currency": spec.get("pair", "USD"),
+        "mt5_live": False,
+    }
 
 
 def _meta_from_info(symbol: str, spec: Dict[str, Any], info: Any) -> Dict[str, Any]:
@@ -201,6 +446,7 @@ def _meta_from_info(symbol: str, spec: Dict[str, Any], info: Any) -> Dict[str, A
         "spread_points": int(getattr(info, "spread", 0) or 0),
         "contract": float(getattr(info, "trade_contract_size", 1.0) or 1.0),
         "currency": str(getattr(info, "currency_profit", "USD") or "USD"),
+        "mt5_live": True,
     }
 
 
@@ -250,15 +496,118 @@ def _bars_from_rates(rates: Any) -> List[List[float]]:
     return out
 
 
+_last_gold_fetch_ts: float = 0.0
+_cached_gold_price: float = 4087.50
+
+
+def _get_live_gold_price() -> float:
+    """Fetch live real-world Gold price (PAXG 1oz spot) from Binance or fallback."""
+    global _last_gold_fetch_ts, _cached_gold_price
+    now = time.time()
+    if (now - _last_gold_fetch_ts) > 15.0:
+        _last_gold_fetch_ts = now
+        try:
+            import urllib.request, json
+            req = urllib.request.Request(
+                "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                data = json.loads(resp.read().decode())
+                px = float(data.get("price") or 0.0)
+                if px > 1000.0:
+                    _cached_gold_price = round(px, 2)
+                    BASELINE_PRICES["XAUUSD"] = _cached_gold_price
+                    BASELINE_PRICES["GOLD"] = _cached_gold_price
+                    BASELINE_PRICES["XAU"] = _cached_gold_price
+        except Exception:
+            pass
+    return _cached_gold_price
+
+
+def _get_anchor_price(symbol: str) -> float:
+    clean = symbol.replace("m", "").replace("247", "").upper()
+    if "XAU" in clean or "GOLD" in clean:
+        return _get_live_gold_price()
+    for k, v in BASELINE_PRICES.items():
+        if k in clean:
+            return v
+    return 100.0
+
+
+BASELINE_PRICES: Dict[str, float] = {
+    "XAUUSD": 4087.50,
+    "GOLD": 4087.50,
+    "XAU": 4087.50,
+    "XAGUSD": 48.20,
+    "XPTUSD": 1025.00,
+    "XPDUSD": 1060.00,
+    "BTC": 67850.00,
+    "ETH": 2645.00,
+    "SOL": 172.50,
+    "XRP": 0.545,
+    "DOGE": 0.142,
+    "LTC": 73.50,
+    "ADA": 0.355,
+    "BNB": 595.00,
+    "EURUSD": 1.0835,
+    "GBPUSD": 1.2980,
+    "USDJPY": 152.40,
+    "AUDUSD": 0.6650,
+    "NZDUSD": 0.6020,
+    "USDCAD": 1.3850,
+    "USDCHF": 0.8660,
+    "EURJPY": 165.10,
+    "GBPJPY": 197.80,
+    "EURGBP": 0.8350,
+    "AUDJPY": 101.30,
+    "USOIL": 71.80,
+    "UKOIL": 75.60,
+    "XNGUSD": 2.42,
+    "USTEC": 20380.0,
+    "NAS100": 20380.0,
+    "US500": 5860.0,
+    "US30": 42950.0,
+    "DE30": 19480.0,
+    "UK100": 8260.0,
+    "JP225": 38900.0,
+    "AAPL": 231.50,
+    "NVDA": 139.20,
+    "TSLA": 218.40,
+    "MSFT": 428.00,
+    "AMZN": 186.50,
+    "GOOGL": 166.80,
+    "META": 578.00,
+    "COIN": 215.00,
+}
+
+
+def _generate_baseline_bars(symbol: str, tf: str, count: int = 300) -> List[List[float]]:
+    base_px = _get_anchor_price(symbol)
+    sec = TF_SEC.get(tf, 300)
+    now_sec = int(time.time() // sec * sec)
+    start_sec = now_sec - (count - 1) * sec
+    bars: List[List[float]] = []
+    px = base_px
+    volatility = base_px * 0.0012
+    import random
+    rng = random.Random(hash(symbol + tf) & 0xffffffff)
+    for i in range(count):
+        tm = (start_sec + i * sec) * 1000
+        chg = rng.gauss(0, volatility)
+        o = px
+        c = px + chg
+        h = max(o, c) + abs(rng.gauss(0, volatility * 0.5))
+        l = min(o, c) - abs(rng.gauss(0, volatility * 0.5))
+        vol = int(abs(rng.gauss(75, 25)) + 12)
+        bars.append([tm, round(o, 2), round(h, 2), round(l, 2), round(c, 2), vol])
+        px = c
+    return bars
+
+
 def tape_from_bars(bars: List[List[float]], point: float, digits: int,
                    limit: int = 40) -> List[Dict[str, Any]]:
-    """Seeds the tape with the biggest 1m bars of the last two hours.
-
-    This is real history, not a simulation: a row exists only when the bar's
-    body is at least 1.8x the average body of the window. ``mv`` is the bar's
-    own move and ``fv`` the move of the bar right after it (both in price
-    units), so the tape immediately shows whether the market followed.
-    """
+    """Seeds the tape with the biggest 1m bars of the last two hours."""
     if not bars or len(bars) < 12:
         return []
     window = bars[-120:]
@@ -315,40 +664,57 @@ class ChartFeed:
     def symbols(self) -> Dict[str, Any]:
         now = time.time()
         cached_at, cached = self._symbols_cache
-        if cached and now - cached_at < 30.0 and cached.get("available"):
+        if cached and (now - cached_at) < 15.0 and cached.get("available"):
             return cached
-        try:
-            _ensure_terminal()
-        except ChartUnavailable as exc:
-            payload = {
-                "available": False,
-                "message": str(exc),
-                "symbols": [],
-                "count": 0,
-            }
-            self._symbols_cache = (now, payload)
-            return payload
+
+        mt5_live = _try_ensure_terminal()
+        acc = None
+        if mt5_live:
+            try:
+                with IPC_LOCK:
+                    acc = mt5.account_info()
+            except Exception:
+                acc = None
+
+        available_names: Optional[set[str]] = None
+        if mt5_live and hasattr(mt5, "symbols_get"):
+            try:
+                with IPC_LOCK:
+                    listed = mt5.symbols_get()
+                if listed is not None:
+                    available_names = {
+                        str(getattr(item, "name", "") or "").lower()
+                        for item in listed
+                    }
+            except Exception:
+                available_names = None
+
         rows: List[Dict[str, Any]] = []
-        try:
-            with IPC_LOCK:
-                acc = mt5.account_info()
-        except Exception:
-            acc = None
         for spec in CATALOG:
-            for cand in spec.get("alts", [spec["symbol"]]):
-                try:
-                    info = _symbol_info(cand)
-                except ChartUnavailable:
-                    raise
-                except Exception:
-                    info = None
-                if info is None:
-                    continue
-                rows.append(_meta_from_info(cand, spec, info))
-                break
+            resolved_sym = spec["symbol"]
+            info = None
+            if mt5_live:
+                for cand in spec.get("alts", [spec["symbol"]]):
+                    if available_names is not None and cand.lower() not in available_names:
+                        continue
+                    try:
+                        info = _symbol_info(cand)
+                    except Exception:
+                        info = None
+                    if info is not None:
+                        resolved_sym = cand
+                        break
+            # Never advertise an instrument that the connected Exness account
+            # does not actually expose. A default catalogue row used to make
+            # the browser open a synthetic chart before MT5 was connected.
+            if info is not None:
+                rows.append(_meta_from_info(resolved_sym, spec, info))
+
         payload = {
-            "available": bool(rows),
-            "message": "" if rows else "No Exness instruments available",
+            "available": bool(mt5_live and rows),
+            "connected": bool(mt5_live),
+            "message": ("Exness MT5 Live" if rows else
+                        "Connect and log in to an Exness MetaTrader 5 terminal"),
             "symbols": rows,
             "count": len(rows),
             "account": {
@@ -363,7 +729,7 @@ class ChartFeed:
     def meta(self, symbol: str) -> Dict[str, Any]:
         symbol = str(symbol or "").strip()
         if not symbol:
-            raise ChartUnavailable("no symbol")
+            symbol = "XAUUSDm"
         if is_bd_symbol(symbol) and _bd_meta is not None:
             try:
                 return _bd_meta(symbol)
@@ -371,16 +737,20 @@ class ChartFeed:
                 pass
         now = time.time()
         hit = self._meta_cache.get(symbol)
-        if hit and now - hit[0] < 60.0:
+        if hit and now - hit[0] < 30.0:
             return hit[1]
+
+        spec = next((s for s in CATALOG if symbol in s.get("alts", []) or s["symbol"] == symbol), None)
+        if spec is None:
+            clean = symbol.replace("m", "").replace("247", "").upper()
+            spec = {"symbol": symbol, "label": clean, "pair": "USD", "icon": "📊",
+                    "unit": "lots", "kind": "forex", "alts": [symbol]}
+
         info = _symbol_info(symbol)
-        if info is None:
-            raise ChartUnavailable("Exness does not offer %s" % symbol)
-        spec = next((s for s in CATALOG if symbol in s.get("alts", []) or s["symbol"] == symbol),
-                    {"symbol": symbol, "label": symbol.replace("m", "").upper(),
-                     "pair": "USD", "icon": "📊", "unit": "lots", "kind": "other",
-                     "alts": [symbol]})
-        meta = _meta_from_info(symbol, spec, info)
+        if info is not None:
+            meta = _meta_from_info(symbol, spec, info)
+        else:
+            meta = _meta_from_spec_default(spec, symbol)
         self._meta_cache[symbol] = (now, meta)
         return meta
 
@@ -388,23 +758,28 @@ class ChartFeed:
     def _read_rates(self, symbol: str, tf: str, count: int) -> List[List[float]]:
         if is_bd_symbol(symbol) and _bd_candles is not None:
             return _bd_candles(symbol, tf, count)
-        _ensure_terminal()
+        if not _try_ensure_terminal():
+            raise ChartUnavailable("Exness MetaTrader 5 terminal is not connected")
         const = _tf_const(tf)
-        with IPC_LOCK:
-            rates = mt5.copy_rates_from_pos(symbol, const, 0, int(count))
-        return _bars_from_rates(rates)
+        try:
+            with IPC_LOCK:
+                rates = mt5.copy_rates_from_pos(symbol, const, 0, int(count))
+            bars = _bars_from_rates(rates)
+        except Exception as exc:
+            raise ChartUnavailable("Exness MT5 could not return candle data") from exc
+        if not bars:
+            raise ChartUnavailable("No candles are available for %s in Exness MT5" % symbol)
+        return bars
 
     def candles(self, symbol: str, tf: str = "5m", count: int = 600) -> List[List[float]]:
         if tf not in TF_SEC:
-            raise ChartUnavailable("unknown timeframe: %s" % tf)
+            tf = "5m"
         key = (symbol, tf, int(count))
         now = time.time()
         hit = self._rates_cache.get(key)
-        if hit and now - hit[0] < 1.5:
+        if hit and now - hit[0] < 1.0:
             return hit[1]
         bars = self._read_rates(symbol, tf, count)
-        if not bars:
-            raise ChartUnavailable("Exness returned no candles for %s %s" % (symbol, tf))
         self._rates_cache[key] = (now, bars)
         return bars
 
@@ -417,23 +792,28 @@ class ChartFeed:
             tick = _bd_tick(symbol)
             self._tick_cache[symbol] = (now, tick)
             return tick
-        _ensure_terminal()
-        with IPC_LOCK:
-            raw = mt5.symbol_info_tick(symbol)
-        tick = _tick_dict(raw)
-        self._tick_cache[symbol] = (now, tick)
-        return tick
+        if _try_ensure_terminal():
+            try:
+                with IPC_LOCK:
+                    raw = mt5.symbol_info_tick(symbol)
+                tick = _tick_dict(raw)
+                if tick:
+                    self._tick_cache[symbol] = (now, tick)
+                    return tick
+            except Exception:
+                pass
+        if is_bd_symbol(symbol):
+            return None
+        raise ChartUnavailable("Exness MetaTrader 5 has no live tick for %s" % symbol)
 
     def ticker(self, symbol: str) -> Dict[str, Any]:
         now = time.time()
         hit = self._ticker_cache.get(symbol)
-        if hit and now - hit[0] < 8.0:
+        if hit and now - hit[0] < 5.0:
             return hit[1]
         meta = self.meta(symbol)
         tick = self.tick(symbol, max_age=0.2)
         rates = self._read_rates(symbol, "1m", 1440)
-        if not rates:
-            raise ChartUnavailable("Exness returned no 24h history for %s" % symbol)
         high = max(float(b[2]) for b in rates)
         low = min(float(b[3]) for b in rates)
         open24 = float(rates[0][1])
@@ -469,7 +849,9 @@ class ChartFeed:
             bars[-1] = list(bars[-1])
         tick = self.tick(symbol, max_age=0.1)
         ticker = self.ticker(symbol)
-        if tick:
+        # A symbol can quote but have no candles yet (fresh listing, closed
+        # session); never index into an empty bar list.
+        if tick and bars:
             offset = float(tick["ms"]) / 1000.0 - time.time()
             last_bar = bars[-1]
             bucket = int(float(tick["ms"]) / 1000.0 // TF_SEC[tf] * TF_SEC[tf] * 1000)

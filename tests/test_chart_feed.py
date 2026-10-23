@@ -194,6 +194,19 @@ class TestSnapshot(unittest.TestCase):
             with self.assertRaises(CF.ChartUnavailable):
                 feed.snapshot("XAUUSDm", "5m", 10)
 
+    def test_quote_without_candles_does_not_crash(self):
+        """A symbol can quote while its candle history is still empty."""
+        feed = CF.ChartFeed()
+        feed.meta = lambda symbol: {"symbol": symbol, "digits": 2, "point": 0.01,
+                                    "unit": "lots", "currency": "USD"}
+        feed.candles = lambda symbol, tf, count: []
+        feed.tick = lambda symbol, max_age=0.0: {"ms": 1700000000000, "bid": 1.0, "ask": 1.1}
+        feed.ticker = lambda symbol: {"symbol": symbol, "price": 1.0}
+        feed.tape_history = lambda symbol, limit=40: []
+        snap = feed.snapshot("XAUUSDm", "5m", 10)
+        self.assertEqual(snap["t"], "snap")
+        self.assertEqual(snap["bars"], [])
+
     def test_unknown_timeframe_is_rejected(self):
         feed, fake = self._feed()
         with patch.object(CF, "mt5", fake):

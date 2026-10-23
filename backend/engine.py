@@ -753,7 +753,37 @@ class Engine:
     # -------------------------------------------------------- bot 3 (extreme high & low structure)
     def _bot3_stub(self) -> Dict[str, Any]:
         sym = str(self.bot3.cfg.get("symbol") or "XAUUSDm")
-        planned = [
+        live_price = 0.0
+        live_ask = 0.0
+        live_bid = 0.0
+        live_levels: Dict[str, Any] = {}
+        if mt5 is not None:
+            try:
+                if not self.bot3.symbol:
+                    self.bot3.resolve_symbol()
+                actual_symbol = self.bot3.symbol or sym
+                tick = mt5.symbol_info_tick(actual_symbol)
+                live_ask = float(getattr(tick, "ask", 0.0) or 0.0) if tick else 0.0
+                live_bid = float(getattr(tick, "bid", 0.0) or 0.0) if tick else 0.0
+                digits = self.bot3._digits(actual_symbol)
+                live_price = round((live_ask + live_bid) / 2.0, digits) if live_ask and live_bid else 0.0
+                live_levels = self.bot3.compute_all_levels(actual_symbol)
+                if live_price and live_levels:
+                    planned = self.bot3.compute_planned_trades(live_price, live_levels)
+                else:
+                    planned = []
+            except Exception:
+                live_levels = {}
+                planned = []
+        else:
+            planned = []
+        live_digits = self.bot3._digits(self.bot3.symbol or sym) if mt5 is not None else 2
+        live_symbol = self.bot3.symbol or sym
+        if live_price <= 0:
+            live_price = 0.0
+            live_ask = 0.0
+            live_bid = 0.0
+        fallback_planned = [
             {
                 "id": 1, "priority_rank": 1, "action": "BUY", "scope": "Today",
                 "label": "Today Lower Low (LL)", "price": 2642.50, "distance": 8.20, "dist_pct": 0.31,
@@ -800,16 +830,21 @@ class Engine:
                 "tp": 0.50, "sl": 5.00
             }
         ]
+        if not planned:
+            planned = fallback_planned if live_price <= 0 else []
+        levels = live_levels or {"d1": {}, "w1": {}, "prev": {}, "active_view": "D1"}
         return {
             "running": bool((cfg.CONFIG.get("bot3") or {}).get("running")),
             "enabled": False,
-            "symbol": sym,
+            "symbol": live_symbol,
             "symbol_requested": sym,
-            "symbol_ok": False,
+            "symbol_ok": bool(live_price),
             "symbol_options": [],
-            "ask": 2650.70, "bid": 2650.50, "spread": 0.20, "digits": 2, "price": 2650.60,
+            "ask": live_ask, "bid": live_bid,
+            "spread": round(live_ask - live_bid, live_digits) if live_ask and live_bid else 0.0,
+            "digits": live_digits, "price": live_price,
             "config": {**self.bot3.cfg, **(cfg.CONFIG.get("bot3") or {})},
-            "levels": {"d1": {"hh": 2668.0, "ll": 2642.5, "lh": 2660.0, "hl": 2645.0}, "w1": {"hh": 2685.2, "ll": 2635.0}, "prev": {"hh": 2670.0, "ll": 2618.4}, "active_view": "D1"},
+            "levels": levels,
             "planned_trades": planned,
             "timer_str": "60s",
             "zone_status": "MIDDLE (Waiting)",
@@ -1608,14 +1643,15 @@ class Engine:
         if self.mode == "live":
             return
         if self.locked:
-            self.status = "disconnected"
+            if self.status != "connected":
+                self.status = "disconnected"
             self.ea_positions = []
             return
         if self.ea_last_seen and (time.time() - self.ea_last_seen) > EA_STALE_SECONDS:
             if self.ea_positions:
                 self._log_event("warn", "EA bridge went quiet - open positions cleared")
             self.ea_positions = []
-        if self.mode is None and self.status != "connecting":
+        if self.mode is None and self.status not in ("connecting", "connected"):
             self.status = "connected" if (self.ea_last_seen and (time.time() - self.ea_last_seen) <= EA_STALE_SECONDS) else "disconnected"
 
     def _backfill_history(self, force: bool = False) -> None:

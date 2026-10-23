@@ -117,6 +117,7 @@ const I18N = {
     settingsTitle: 'Settings', pollInterval: 'Live refresh (ms)', historyRefresh: 'History sync (ms)',
     historyDays: 'History depth (days)', save: 'Save', close: 'Close', disconnect: 'Disconnect',
     connectTitle: 'Exness Account Login', connect: 'Login',
+    viewDashboard: 'View Dashboard',
     login: 'Login (account number)', password: 'Password', server: 'Server',
     serverPick: 'Please choose your Exness server…',
     serverReal: 'Exness Real accounts',
@@ -296,6 +297,7 @@ const I18N = {
     settingsTitle: 'সেটিংস', pollInterval: 'লাইভ রিফ্রেশ (ms)', historyRefresh: 'হিস্ট্রি সিঙ্ক (ms)',
     historyDays: 'হিস্ট্রি গভীরতা (দিন)', save: 'সেভ', close: 'বন্ধ', disconnect: 'ডিসকানেক্ট',
     connectTitle: 'Exness অ্যাকাউন্ট লগইন', connect: 'লগইন',
+    viewDashboard: 'ড্যাশবোর্ড দেখুন',
     login: 'লগইন (অ্যাকাউন্ট নম্বর)', password: 'পাসওয়ার্ড', server: 'সার্ভার',
     serverPick: 'আপনার Exness সার্ভার বেছে নিন…',
     serverReal: 'Exness রিয়েল অ্যাকাউন্ট',
@@ -490,6 +492,9 @@ let wsRetry = 0;
 let wsAlive = false;
 let lastServerMsgAt = 0;
 let wasConnected = false;
+let dashboardPreview = false;
+let connectViewPinned = false;   // user explicitly opened the login screen
+let botsEnabled = false;
 let period = 'today';
 let histPeriod = '7';
 let histResult = 'all';
@@ -688,11 +693,15 @@ function applyState(data) {
     data.bot5.news = prev.bot5.news;
   }
   S = data;
+  if (window.TradersTerminal && typeof window.TradersTerminal.onSnapshot === 'function') {
+    window.TradersTerminal.onSnapshot(data);
+  }
   const connected = !!data.connected || data.status === 'connected' || (data.mode === 'ea');
   if (!connected && wasConnected) fullResetUI();
   wasConnected = connected;
   renderConnection(data);
-  if (connected) {
+  syncBotStartButtons(connected);
+  if (!connectViewPinned && (connected || dashboardPreview)) {
     $('connect-view').classList.add('hidden');
     $('dash').classList.remove('hidden');
     scheduleFlowWires();   // the connectors measure as soon as the dashboard is on screen
@@ -5678,6 +5687,7 @@ async function doConnect() {
         localStorage.setItem('exdash.login', login);
         localStorage.setItem('exdash.server', server);
       }
+      connectViewPinned = false;
       toast('ok', `Logged in: ${j.account ? j.account.login : login} · ${(j.account && j.account.server) || server}`);
     }
   } catch (e) {
@@ -5693,6 +5703,8 @@ async function doDisconnect() {
   try { await fetch('/api/disconnect', { method: 'POST' }); } catch (e) {}
   S = null;
   wasConnected = false;
+  dashboardPreview = false;
+  connectViewPinned = false;
   fullResetUI();
   histSig = '';
   lastClosedId = null;
@@ -5705,6 +5717,42 @@ async function doDisconnect() {
 
 function bindUI() {
   el('#connect-form').addEventListener('submit', (e) => { e.preventDefault(); doConnect(); });
+  $('view-dashboard-btn').addEventListener('click', () => {
+    dashboardPreview = true;
+    connectViewPinned = false;
+    $('connect-view').classList.add('hidden');
+    $('dash').classList.remove('hidden');
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+      if (window.SoftradeXTerminal && window.SoftradeXTerminal.refresh) {
+        window.SoftradeXTerminal.refresh();
+      }
+    }, 60);
+    toast('ok', LANG === 'bn' ? 'Exness ড্যাশবোর্ড ও চার্ট দেখানো হচ্ছে' : 'Exness dashboard & chart opened');
+  });
+  const connWidget = $('conn-widget');
+  if (connWidget) {
+    connWidget.style.cursor = 'pointer';
+    connWidget.addEventListener('click', () => {
+      if ($('dash').classList.contains('hidden')) {
+        dashboardPreview = true;
+        connectViewPinned = false;
+        $('dash').classList.remove('hidden');
+        $('connect-view').classList.add('hidden');
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'));
+          if (window.SoftradeXTerminal && window.SoftradeXTerminal.refresh) {
+            window.SoftradeXTerminal.refresh();
+          }
+        }, 60);
+      } else {
+        dashboardPreview = false;
+        connectViewPinned = true;
+        $('connect-view').classList.remove('hidden');
+        $('dash').classList.add('hidden');
+      }
+    });
+  }
   bindBotUI();
   bindBot2UI();
   bindBot3UI();
@@ -5906,6 +5954,23 @@ function renderMt5Status() {
   }
 }
 
+/* The Start buttons ship disabled in the HTML so the dashboard can never
+   arm a bot before an account is connected and automated trading is
+   enabled on the server. */
+const BOT_START_BUTTONS = ['bot-start', 'bot2-start', 'bot3-start', 'bot4-start',
+  'bot5-start', 'bot6-start', 'bot7-start'];
+function syncBotStartButtons(connected) {
+  const ready = botsEnabled && (connected !== undefined ? connected : wasConnected);
+  BOT_START_BUTTONS.forEach((id) => {
+    const btn = $(id);
+    if (!btn) return;
+    btn.disabled = !ready;
+    btn.title = ready ? '' : (botsEnabled
+      ? 'Log in to an Exness account to start a bot'
+      : 'Automated trading is disabled in config/config.json (bots_enabled: false)');
+  });
+}
+
 async function loadConfig(silent) {
   let fresh;
   try {
@@ -5914,6 +5979,8 @@ async function loadConfig(silent) {
   } catch (e) { if (!silent) CFG = {}; return; }
   const prevTerminals = (CFG.terminals || []).join('|');
   CFG = fresh;
+  botsEnabled = !!fresh.bots_enabled;
+  syncBotStartButtons();
 
   const sel = $('terminal-path');
   const list = CFG.terminals || [];
@@ -6254,7 +6321,11 @@ const _botSelectedSymbols = {
 };
 
 function getHistoryKey(sym) {
-  return String(sym || '').toUpperCase();
+  // Exness copies carry a broker suffix ("XAUUSDm") while the market-watch
+  // feed publishes the clean pair ("XAUUSD"). Both must share ONE rolling
+  // history, otherwise the selected market's curve never receives a live
+  // tick and keeps drawing its synthetic seed at a stale price forever.
+  return String(sym || '').toUpperCase().replace(/M$/, '');
 }
 
 function getBasePriceForSym(sym) {
@@ -7585,4 +7656,3 @@ function init3DTiltEngine() {
     });
   });
 })();
-

@@ -14,6 +14,7 @@ Design notes
 from __future__ import annotations
 
 import os
+import subprocess
 import threading
 import time
 from datetime import datetime, timedelta
@@ -73,6 +74,24 @@ def _mt5(fn, *args, **kwargs):
     """Run a single MetaTrader5 IPC call under the global IPC lock."""
     with IPC_LOCK:
         return fn(*args, **kwargs)
+
+
+def _launch_terminal(path: str) -> bool:
+    """Start a stopped terminal without creating a second instance when it is live."""
+    exe = Path(path or "")
+    if not exe.is_file():
+        return False
+    try:
+        subprocess.Popen(
+            [str(exe)],
+            cwd=str(exe.parent),
+            close_fds=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        time.sleep(2.0)
+        return True
+    except OSError:
+        return False
 
 
 def package_available() -> bool:
@@ -469,7 +488,17 @@ class MT5Client:
             if path and Path(path).exists():
                 kwargs["path"] = path
             if not _mt5(mt5.initialize, **kwargs):
-                return False
+                # The terminal can have exited between the probe and
+                # initialize(). Start the exact previously authenticated build
+                # once, then retry the attach with the same account guard.
+                try:
+                    _mt5(mt5.shutdown)
+                except Exception:
+                    pass
+                if not path or not _launch_terminal(path):
+                    return False
+                if not _mt5(mt5.initialize, **kwargs):
+                    return False
             auth: Any = None
             try:
                 auth = _mt5(mt5.account_info)

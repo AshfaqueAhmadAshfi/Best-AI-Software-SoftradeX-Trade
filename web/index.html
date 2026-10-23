@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/styles.css?v=20261021_bdcard" />
     <link rel="stylesheet" href="/static/styles-premium.css?v=20261018_mktflow" />
-    <link rel="stylesheet" href="/static/styles-ultra.css?v=20261022_traderwrap" />
+    <link rel="stylesheet" href="/static/styles-ultra.css?v=20261022_exnesscat1" />
     <link rel="stylesheet" href="/static/styles-mech.css?v=20261018_mktflow" />
   <link rel="icon" type="image/jpeg" href="/static/logo.jpg" />
 </head>
@@ -119,6 +119,9 @@
             <button type="submit" id="connect-btn" class="btn primary">
               <span class="btn-label" data-i18n="connect">Login</span>
             </button>
+            <button type="button" id="view-dashboard-btn" class="btn ghost">
+              <span data-i18n="viewDashboard">View Dashboard</span>
+            </button>
           </div>
           <div id="connect-progress" class="progress hidden"><span></span></div>
         </form>
@@ -224,6 +227,22 @@
             <span class="term-brand-name">EXNESS</span>
             <span class="term-pro-tag">MT5 CHART</span>
             <span class="term-live-pulse" id="b-term-pulse" title="Waiting for the Exness tick stream…"></span>
+          </div>
+
+          <!-- Market Category Filter & Search -->
+          <div class="exness-market-controls" id="exness-market-controls">
+            <div class="exness-cat-tabs" id="exness-cat-tabs">
+              <button type="button" class="exness-cat-btn active" data-cat="all">ALL</button>
+              <button type="button" class="exness-cat-btn" data-cat="metals">🥇 METALS</button>
+              <button type="button" class="exness-cat-btn" data-cat="crypto">⚡ CRYPTO</button>
+              <button type="button" class="exness-cat-btn" data-cat="forex">💱 FOREX</button>
+              <button type="button" class="exness-cat-btn" data-cat="indices">📈 INDICES</button>
+              <button type="button" class="exness-cat-btn" data-cat="energy">🛢️ ENERGY</button>
+              <button type="button" class="exness-cat-btn" data-cat="stocks">🏢 STOCKS</button>
+            </div>
+            <div class="exness-search-wrap">
+              <input type="text" id="exness-market-search" class="exness-market-search" placeholder="🔍 Search market..." />
+            </div>
           </div>
 
           <!-- Symbol Tabs: live Exness instruments, filled by softradex-terminal.js -->
@@ -642,6 +661,62 @@
           </div>
         </div>
 
+        <section class="binance-order-flow-panel" id="binance-order-flow-panel" aria-label="Binance Order Flow Terminal">
+          <div class="bof-head">
+            <div class="bof-title-wrap">
+              <span class="bof-pulse" id="bof-pulse"></span>
+              <strong>BINANCE ORDER FLOW TERMINAL</strong>
+              <span class="bof-market">MARKET: <b id="bof-market">—</b></span>
+            </div>
+            <span class="bof-status" id="bof-status">NO BINANCE PAIR</span>
+          </div>
+          <div class="bof-summary">
+            <div class="bof-side buy"><span>BUY FLOW</span><b id="bof-buy-total">$0.00</b><em id="bof-buy-pct">0%</em></div>
+            <div class="bof-side sell"><span>SELL FLOW</span><b id="bof-sell-total">$0.00</b><em id="bof-sell-pct">0%</em></div>
+          </div>
+          <div class="bof-toolbar">
+            <button type="button" class="bof-filter active" data-bof-filter="ALL">ALL</button>
+            <button type="button" class="bof-filter" data-bof-filter="BUY">BUY</button>
+            <button type="button" class="bof-filter" data-bof-filter="SELL">SELL</button>
+            <button type="button" class="bof-pause" id="bof-pause">Ⅱ</button>
+            <span>Real Binance aggregate trades · market-wise totals</span>
+          </div>
+          <div class="bof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>NOTIONAL</span></div>
+          <div class="bof-tape" id="bof-tape"></div>
+        </section>
+
+        <section class="multi-order-flow-grid" aria-label="Additional Exchange Order Flow Terminals">
+          <article class="multi-order-flow-terminal" data-mof="coinbase">
+            <header><span class="bof-pulse"></span><strong>COINBASE ORDER FLOW</strong><b id="mof-coinbase-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-coinbase-buy">$0.00</b><em id="mof-coinbase-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-coinbase-sell">$0.00</b><em id="mof-coinbase-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-coinbase-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="kraken">
+            <header><span class="bof-pulse"></span><strong>KRAKEN ORDER FLOW</strong><b id="mof-kraken-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-kraken-buy">$0.00</b><em id="mof-kraken-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-kraken-sell">$0.00</b><em id="mof-kraken-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-kraken-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="okx">
+            <header><span class="bof-pulse"></span><strong>OKX ORDER FLOW</strong><b id="mof-okx-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-okx-buy">$0.00</b><em id="mof-okx-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-okx-sell">$0.00</b><em id="mof-okx-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-okx-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="bitget">
+            <header><span class="bof-pulse"></span><strong>BITGET ORDER FLOW</strong><b id="mof-bitget-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-bitget-buy">$0.00</b><em id="mof-bitget-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-bitget-sell">$0.00</b><em id="mof-bitget-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-bitget-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="gate">
+            <header><span class="bof-pulse"></span><strong>GATE.IO ORDER FLOW</strong><b id="mof-gate-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-gate-buy">$0.00</b><em id="mof-gate-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-gate-sell">$0.00</b><em id="mof-gate-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-gate-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="bybit">
+            <header><span class="bof-pulse"></span><strong>BYBIT ORDER FLOW</strong><b id="mof-bybit-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-bybit-buy">$0.00</b><em id="mof-bybit-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-bybit-sell">$0.00</b><em id="mof-bybit-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-bybit-tape"></div>
+          </article>
+        </section>
 
         <!-- 08 · TRADING SESSIONS -->
         <div class="flow-stage" id="stage-sessions">
@@ -1040,7 +1115,7 @@
                 </div>
               </div>
               <div class="bot-actions">
-                <button id="bot-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot-start" class="btn bot-start" data-i18n="botStart" disabled>START</button>
                 <button id="bot-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
                 <button id="bot-close" class="btn ghost small" data-i18n="botClose">Close now</button>
               </div>
@@ -1183,7 +1258,7 @@
               </div>
 
               <div class="bot-actions">
-                <button id="bot2-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot2-start" class="btn bot-start" data-i18n="botStart" disabled>START</button>
                 <button id="bot2-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
                 <button id="bot2-trend" class="btn bot-trend" title="Watch ON: the dial pressure decides the direction (at or above your Watch %). OFF: the bot follows the candle flow."><span data-i18n="bot2Watch">Watch</span>: <span id="bot2-trend-status" class="trend-badge deactive">OFF</span></button>
                 <button id="bot2-reverse" class="btn bot-trend" title="Reverse: whatever direction the bot would take, it takes the exact opposite."><span data-i18n="bot2Reverse">Reverse</span>: <span id="bot2-reverse-status" class="trend-badge deactive">OFF</span></button>
@@ -1354,7 +1429,7 @@
               </div>
 
               <div class="bot-actions">
-                <button id="bot3-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot3-start" class="btn bot-start" data-i18n="botStart" disabled>START</button>
                 <button id="bot3-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
                 <button id="bot3-close" class="btn ghost small" data-i18n="botClose">Close now</button>
               </div>
@@ -1432,7 +1507,7 @@
               </div>
 
               <div class="bot-actions">
-                <button id="bot4-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot4-start" class="btn bot-start" data-i18n="botStart" disabled>START</button>
                 <button id="bot4-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
                 <button id="bot4-numbering" class="btn bot-trend" title="Auto-number the lots 0.01, 0.02, 0.03 …"><span data-i18n="bot4Numbering">Numbering Lot Size</span>: <span id="bot4-numbering-status" class="trend-badge deactive">OFF</span></button>
                 <button id="bot4-close" class="btn ghost small" data-i18n="botClose">Close now</button>
@@ -1540,7 +1615,7 @@
               </div>
 
               <div class="bot-actions">
-                <button id="bot6-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot6-start" class="btn bot-start" data-i18n="botStart" disabled>START</button>
                 <button id="bot6-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
                 <button id="bot6-watch-gate" class="btn bot-trend" title="Trade only in the direction the Market Pressure Watch dials show"><span data-i18n="bot6WatchGate">Watch Check</span>: <span id="bot6-watch-gate-status" class="trend-badge deactive">OFF</span></button>
                 <button id="bot6-ai-gate" class="btn bot-trend" title="The AI market-direction board (every news source) must not oppose the trade"><span data-i18n="bot6AiGate">AI Check</span>: <span id="bot6-ai-gate-status" class="trend-badge deactive">OFF</span></button>
@@ -1645,7 +1720,7 @@
               </div>
 
               <div class="bot-actions">
-                <button id="bot7-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot7-start" class="btn bot-start" data-i18n="botStart" disabled>START</button>
                 <button id="bot7-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
                 <button id="bot7-watch-gate" class="btn bot-trend" title="Trade only in the direction the Market Pressure Watch dials show"><span data-i18n="bot6WatchGate">Watch Check</span>: <span id="bot7-watch-gate-status" class="trend-badge deactive">OFF</span></button>
                 <button id="bot7-ai-gate" class="btn bot-trend" title="The AI market-direction board (every news source) must not oppose the trade"><span data-i18n="bot6AiGate">AI Check</span>: <span id="bot7-ai-gate-status" class="trend-badge deactive">OFF</span></button>
@@ -1758,7 +1833,7 @@
               </div>
 
               <div class="bot-actions">
-                <button id="bot5-start" class="btn bot-start" data-i18n="botStart">START</button>
+                <button id="bot5-start" class="btn bot-start" data-i18n="botStart" disabled>START</button>
                 <button id="bot5-stop" class="btn bot-stop" data-i18n="botStop">STOP</button>
                 <button id="bot5-close" class="btn ghost small" data-i18n="botClose">Close now</button>
               </div>
@@ -1933,9 +2008,12 @@
 
   <div id="toasts" class="toasts"></div>
 
-  <script src="/static/softradex-terminal.js?v=20261020_bdt"></script>
-  <script src="/static/app.js?v=20261021_mktflow"></script>
+  <script src="/static/softradex-terminal.js?v=20261023_news12"></script>
+  <script src="/static/chart-news-events.js?v=20261023_news12"></script>
+  <script src="/static/app.js?v=20261022_dashprev1"></script>
   <script src="/static/traders-terminal.js?v=20261022_globalflow3"></script>
+  <script src="/static/binance-order-flow-terminal.js?v=20261022_v1"></script>
+  <script src="/static/multi-exchange-order-flow.js?v=20261022_v6"></script>
   <script src="/static/whale-flow.js?v=20261019_v1"></script>
 </body>
 

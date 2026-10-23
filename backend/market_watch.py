@@ -454,7 +454,7 @@ def _fallback_symbol_watch(sym: str) -> Dict[str, Any]:
         spread = 1.50
     elif "XAU" in up or "GOLD" in up:
         digits = 2
-        base_price = 2650.0
+        base_price = 4087.50
         spread = 0.25
     else:
         digits = 2
