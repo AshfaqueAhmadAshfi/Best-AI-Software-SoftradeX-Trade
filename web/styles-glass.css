@@ -1527,6 +1527,47 @@ body {
 #dash .tv-chart-btn.tv-na { opacity: 0.5; }
 #dash .tv-chart-icon { font-size: 12px; }
 
+#dash .tv-cross-badge {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 154px;
+  min-height: 34px;
+  padding: 5px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #475569;
+  font-family: "JetBrains Mono", monospace;
+  line-height: 1.1;
+  box-sizing: border-box;
+}
+#dash .tv-cross-badge .tv-cross-label {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .04em;
+}
+#dash .tv-cross-badge .tv-cross-sub {
+  color: #64748b;
+  font-size: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+#dash .tv-cross-badge.golden {
+  border-color: #eab308;
+  background: #fef9c3;
+  color: #854d0e;
+}
+#dash .tv-cross-badge.golden .tv-cross-sub { color: #a16207; }
+#dash .tv-cross-badge.death {
+  border-color: #ef4444;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+#dash .tv-cross-badge.death .tv-cross-sub { color: #dc2626; }
+#dash .tv-cross-badge.pending { opacity: .7; }
+
 /* ------------------------------------------- chart overlay: whales + news ---
    chart-overlay.js puts these two cards INSIDE the TradingView chart box: the
    embed draws its own canvas, so the news rails / whale prints have to live in
