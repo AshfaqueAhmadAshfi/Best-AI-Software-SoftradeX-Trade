@@ -18,8 +18,22 @@
   transform: translateY(-1px);
 }
 .about-login-trigger {
-  align-self: flex-end;
-  margin: 0 0 10px;
+  align-self: center;
+  justify-content: center;
+  width: min(230px, 100%);
+  margin: 2px 0 16px;
+  padding: 12px 18px;
+  border: 1px solid rgba(37, 99, 235, .34);
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(239, 246, 255, .96), rgba(219, 234, 254, .82));
+  box-shadow: 0 12px 24px -18px rgba(37, 99, 235, .85);
+  font-size: 13px;
+  letter-spacing: .02em;
+}
+.about-login-trigger:hover {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  box-shadow: 0 16px 30px -18px rgba(37, 99, 235, .95);
+}
 }
 .about-side-trigger {
   min-height: 92px;
@@ -86,20 +100,23 @@
 .dashboard-password-dialog {
   position: relative;
   width: min(390px, 100%);
-  padding: 25px;
-  border: 1px solid rgba(255, 255, 255, .85);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, .97);
-  box-shadow: 0 30px 80px -30px rgba(15, 23, 42, .7);
+  padding: 30px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .95);
+  border-radius: 24px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .98), rgba(239, 246, 255, .94));
+  box-shadow: inset 0 1px 0 #fff, 0 30px 80px -30px rgba(30, 64, 175, .62);
   color: #0f172a;
 }
-.dashboard-password-dialog h2 { margin: 0 0 6px; font: 900 22px "Outfit", sans-serif; }
-.dashboard-password-help { margin: 0 0 16px; color: #64748b; font: 500 12px/1.5 "Outfit", sans-serif; }
+.dashboard-password-dialog::before { content: "🔒"; display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 15px; border-radius: 13px; background: #dbeafe; color: #1d4ed8; font-size: 19px; }
+.dashboard-password-dialog h2 { margin: 0 0 7px; color: #0f172a; font: 900 24px "Outfit", sans-serif; }
+.dashboard-password-help { margin: 0 0 19px; color: #64748b; font: 500 13px/1.55 "Outfit", sans-serif; }
 .dashboard-password-dialog label { display: block; margin-bottom: 6px; color: #475569; font: 800 11px "Space Grotesk", sans-serif; }
-.dashboard-password-dialog input { width: 100%; box-sizing: border-box; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 10px; color: #0f172a; background: #fff; font: 800 16px "JetBrains Mono", monospace; letter-spacing: .16em; }
+.dashboard-password-dialog input { width: 100%; box-sizing: border-box; padding: 13px 14px; border: 1px solid rgba(37, 99, 235, .2); border-radius: 12px; color: #0f172a; background: rgba(255, 255, 255, .92); font: 800 17px "JetBrains Mono", monospace; letter-spacing: .16em; }
 .dashboard-password-dialog input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .14); }
-.dashboard-password-error { min-height: 18px; margin: 7px 0 0; color: #dc2626; font: 700 11px "Outfit", sans-serif; }
-.dashboard-password-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.dashboard-password-error { min-height: 18px; margin: 7px 0 0; color: #dc2626; font: 700 12px "Outfit", sans-serif; }
+.dashboard-password-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 13px; }
+.dashboard-password-actions .btn { min-height: 40px; padding: 9px 15px; border-radius: 11px; font-weight: 800; }
 @media (max-width: 560px) {
   .about-me-dialog { grid-template-columns: 92px minmax(0, 1fr); gap: 13px; padding: 16px; }
   .about-me-photo { width: 92px; height: 122px; }
