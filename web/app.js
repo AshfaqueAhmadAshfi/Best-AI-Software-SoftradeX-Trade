@@ -493,6 +493,7 @@ let wsAlive = false;
 let lastServerMsgAt = 0;
 let wasConnected = false;
 let dashboardPreview = false;
+let dashboardPreviewUnlocked = false;
 let connectViewPinned = false;   // user explicitly opened the login screen
 let botsEnabled = false;
 let period = 'today';
@@ -5760,6 +5761,7 @@ async function doDisconnect() {
   S = null;
   wasConnected = false;
   dashboardPreview = false;
+  dashboardPreviewUnlocked = false;
   connectViewPinned = false;
   fullResetUI();
   histSig = '';
@@ -5773,7 +5775,19 @@ async function doDisconnect() {
 
 function bindUI() {
   el('#connect-form').addEventListener('submit', (e) => { e.preventDefault(); doConnect(); });
+  function unlockDashboardPreview() {
+    if (dashboardPreviewUnlocked) return true;
+    const entered = window.prompt(LANG === 'bn' ? 'ড্যাশবোর্ড password দিন' : 'Enter dashboard password');
+    if (entered !== '0186') {
+      showConnectError({ message: LANG === 'bn' ? 'ভুল password — dashboard access দেওয়া হয়নি' : 'Incorrect password — dashboard access denied' });
+      return false;
+    }
+    dashboardPreviewUnlocked = true;
+    showConnectError(null);
+    return true;
+  }
   $('view-dashboard-btn').addEventListener('click', () => {
+    if (!unlockDashboardPreview()) return;
     dashboardPreview = true;
     connectViewPinned = false;
     $('connect-view').classList.add('hidden');
@@ -5791,6 +5805,7 @@ function bindUI() {
     connWidget.style.cursor = 'pointer';
     connWidget.addEventListener('click', () => {
       if ($('dash').classList.contains('hidden')) {
+        if (!unlockDashboardPreview()) return;
         dashboardPreview = true;
         connectViewPinned = false;
         $('dash').classList.remove('hidden');

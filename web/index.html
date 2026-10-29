@@ -14,7 +14,8 @@
     <link rel="stylesheet" href="/static/styles-ultra.css?v=20261025_flowboard3" />
     <link rel="stylesheet" href="/static/styles-mech.css?v=20261018_mktflow" />
     <!-- Clean white & blue glassmorphism theme — must load last so it wins the cascade -->
-    <link rel="stylesheet" href="/static/styles-glass.css?v=20261029_crosscolor1" />
+    <link rel="stylesheet" href="/static/styles-glass.css?v=20261029_zz1" />
+    <link rel="stylesheet" href="/static/about.css?v=20261030_about1" />
   <link rel="icon" type="image/jpeg" href="/static/logo.jpg" />
 </head>
 
@@ -71,6 +72,9 @@
         <div class="connect-brand-header">
           <img src="/static/logo.jpg" alt="SoftradeX" class="login-logo" />
         </div>
+        <button type="button" class="about-me-trigger about-login-trigger" data-about-open>
+          <span aria-hidden="true">◎</span> About Me
+        </button>
         <div class="card-title">
           <h2 data-i18n="connectTitle">Exness Account Login</h2>
           <p data-i18n="connectSub">Enter your Exness login, password and server. You only reach the dashboard after a
@@ -156,6 +160,7 @@
 
     <!-- ================= DASHBOARD ================= -->
     <main id="dash" class="dash hidden">
+      <button type="button" class="about-side-trigger" data-about-open>ABOUT ME</button>
 
       <!-- account strip -->
       <section class="account-strip">
@@ -2001,16 +2006,30 @@
 
   <div id="toasts" class="toasts"></div>
 
+  <div id="about-me-modal" class="about-me-modal hidden" role="dialog" aria-modal="true" aria-labelledby="about-me-title">
+    <div class="about-me-dialog">
+      <button type="button" class="about-me-close" data-about-close aria-label="Close">&times;</button>
+      <img class="about-me-photo" src="/static/my-image.jpg" alt="SoftradeX developer" />
+      <div class="about-me-copy">
+        <p class="about-me-kicker">SOFTRADEX · BUILT WITH PURPOSE</p>
+        <h2 id="about-me-title">About the Developer</h2>
+        <p><strong>SoftradeX Developer</strong> — building practical trading dashboards, market tools, and clean real-time interfaces.</p>
+        <p><strong>My Father</strong> — my first inspiration, strongest support, and the reason I keep building with discipline.</p>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/softradex-terminal.js?v=20261029_whales3"></script>
   <script src="/static/chart-news-events.js?v=20261029_news14"></script>
-  <script src="/static/app.js?v=20261029_cpanel2"></script>
+  <script src="/static/app.js?v=20261030_about1"></script>
   <script src="/static/traders-terminal.js?v=20261022_globalflow3"></script>
   <script src="/static/binance-order-flow-terminal.js?v=20261025_open14v1"></script>
   <script src="/static/multi-exchange-order-flow.js?v=20261025_venues8"></script>
   <script src="/static/whale-flow.js?v=20261028_cpanel1"></script>
-  <script src="/static/tv-chart.js?v=20261029_tv2"></script>
+  <script src="/static/tv-chart.js?v=20261029_zz2"></script>
   <!-- Whales + news cards drawn inside the TradingView chart -->
   <script src="/static/chart-overlay.js?v=20261029_whales2"></script>
+  <script src="/static/about-me.js?v=20261030_about1"></script>
 </body>
 
 </html>

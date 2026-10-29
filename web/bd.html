@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/static/styles-ultra.css?v=20261022_traderwrap" />
   <link rel="stylesheet" href="/static/styles-mech.css?v=20261021_bd" />
   <link rel="stylesheet" href="/static/bd.css?v=20261021_bd4" />
+  <link rel="stylesheet" href="/static/about.css?v=20261030_about1" />
   <link rel="icon" type="image/jpeg" href="/static/logo.jpg" />
   <style>
     .bd-strip .acc-item { min-width: 110px; }
@@ -123,6 +124,7 @@
 
     <!-- ================= DASHBOARD ================= -->
     <main id="dash" class="dash">
+      <button type="button" class="about-side-trigger" data-about-open>ABOUT ME</button>
 
       <!-- BD strip -->
       <section class="account-strip bd-strip" id="bd-market-strip">
@@ -709,9 +711,23 @@
     </main>
   </div>
 
+  <div id="about-me-modal" class="about-me-modal hidden" role="dialog" aria-modal="true" aria-labelledby="about-me-title">
+    <div class="about-me-dialog">
+      <button type="button" class="about-me-close" data-about-close aria-label="Close">&times;</button>
+      <img class="about-me-photo" src="/static/my-image.jpg" alt="SoftradeX developer" />
+      <div class="about-me-copy">
+        <p class="about-me-kicker">SOFTRADEX · BUILT WITH PURPOSE</p>
+        <h2 id="about-me-title">About the Developer</h2>
+        <p><strong>SoftradeX Developer</strong> — building practical trading dashboards, market tools, and clean real-time interfaces.</p>
+        <p><strong>My Father</strong> — my first inspiration, strongest support, and the reason I keep building with discipline.</p>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/softradex-terminal.js?v=20261021_bd6"></script>
   <script src="/static/traders-terminal.js?v=20261022_bd11"></script>
   <script src="/static/bd-app.js?v=20261021_bd6"></script>
+  <script src="/static/about-me.js?v=20261030_about1"></script>
 </body>
 
 </html>
