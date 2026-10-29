@@ -1701,3 +1701,55 @@ body {
 }
 #tv-chart-box .tvo-hint:hover { background: rgba(37, 99, 235, 0.18); }
 #tv-chart-box .tvo-head em { margin-left: 4px; }
+
+/* GOLDEN / DEATH CROSS chip (sits next to the TradingView toggle).
+   The hosted widget ignores studies_overrides, so its own two moving-average
+   lines cannot be recoloured there — this chip is where the MA9/MA21 crossover
+   becomes readable at a glance. Gold = MA9 above MA21, red = below. */
+#dash .tv-cross-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 11px;
+  border-radius: 9px;
+  font-family: "JetBrains Mono", monospace;
+  line-height: 1.2;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+#dash .tv-cross-badge .tv-cross-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+#dash .tv-cross-badge .tv-cross-sub {
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0.82;
+}
+#dash .tv-cross-badge.golden {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+  box-shadow: none;
+}
+#dash .tv-cross-badge.golden .tv-cross-label { color: #a16207; }
+#dash .tv-cross-badge.death {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+  box-shadow: none;
+}
+#dash .tv-cross-badge.death .tv-cross-label { color: #dc2626; }
+#dash .tv-cross-badge.pending {
+  background: rgba(100, 116, 139, 0.14);
+  border-color: rgba(100, 116, 139, 0.35);
+  color: #475569;
+}
+@media (max-width: 1180px) {
+  #dash .tv-cross-badge .tv-cross-sub { display: none; }
+}
+@media (max-width: 700px) {
+  #dash .tv-cross-badge { display: none; }
+}
