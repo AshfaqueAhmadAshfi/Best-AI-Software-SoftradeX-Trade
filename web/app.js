@@ -494,6 +494,7 @@ let lastServerMsgAt = 0;
 let wasConnected = false;
 let dashboardPreview = false;
 let dashboardPreviewUnlocked = false;
+let dashboardPasswordResolve = null;
 let connectViewPinned = false;   // user explicitly opened the login screen
 let botsEnabled = false;
 let period = 'today';
@@ -5775,19 +5776,58 @@ async function doDisconnect() {
 
 function bindUI() {
   el('#connect-form').addEventListener('submit', (e) => { e.preventDefault(); doConnect(); });
+  function closeDashboardPassword(accepted) {
+    const modal = $('dashboard-password-modal');
+    if (modal) modal.classList.add('hidden');
+    const input = $('dashboard-password-input');
+    if (input) input.value = '';
+    const resolve = dashboardPasswordResolve;
+    dashboardPasswordResolve = null;
+    if (resolve) resolve(accepted);
+  }
+  function askDashboardPassword() {
+    const modal = $('dashboard-password-modal');
+    const input = $('dashboard-password-input');
+    const error = $('dashboard-password-error');
+    if (!modal || !input) return Promise.resolve(false);
+    modal.classList.remove('hidden');
+    if (error) error.textContent = '';
+    setTimeout(() => input.focus(), 30);
+    return new Promise((resolve) => { dashboardPasswordResolve = resolve; });
+  }
   function unlockDashboardPreview() {
     if (dashboardPreviewUnlocked) return true;
-    const entered = window.prompt(LANG === 'bn' ? 'ড্যাশবোর্ড password দিন' : 'Enter dashboard password');
-    if (entered !== '0186') {
-      showConnectError({ message: LANG === 'bn' ? 'ভুল password — dashboard access দেওয়া হয়নি' : 'Incorrect password — dashboard access denied' });
-      return false;
-    }
-    dashboardPreviewUnlocked = true;
-    showConnectError(null);
-    return true;
+    return askDashboardPassword().then((entered) => {
+      if (!entered) return false;
+      dashboardPreviewUnlocked = true;
+      showConnectError(null);
+      return true;
+    });
   }
-  $('view-dashboard-btn').addEventListener('click', () => {
-    if (!unlockDashboardPreview()) return;
+  const passwordForm = $('dashboard-password-form');
+  if (passwordForm) {
+    passwordForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const input = $('dashboard-password-input');
+      const error = $('dashboard-password-error');
+      if (input && input.value === '0186') {
+        closeDashboardPassword(true);
+      } else if (error) {
+        error.textContent = LANG === 'bn' ? 'ভুল password — access denied' : 'Incorrect password — access denied';
+        if (input) { input.select(); input.focus(); }
+      }
+    });
+  }
+  const passwordCancel = $('dashboard-password-cancel');
+  const passwordCancelText = $('dashboard-password-cancel-text');
+  if (passwordCancel) passwordCancel.addEventListener('click', () => closeDashboardPassword(false));
+  if (passwordCancelText) passwordCancelText.addEventListener('click', () => closeDashboardPassword(false));
+  const passwordModal = $('dashboard-password-modal');
+  if (passwordModal) passwordModal.addEventListener('click', (event) => {
+    if (event.target === passwordModal) closeDashboardPassword(false);
+  });
+  $('view-dashboard-btn').addEventListener('click', async () => {
+    if (!(await unlockDashboardPreview())) return;
     dashboardPreview = true;
     connectViewPinned = false;
     $('connect-view').classList.add('hidden');
@@ -5803,9 +5843,9 @@ function bindUI() {
   const connWidget = $('conn-widget');
   if (connWidget) {
     connWidget.style.cursor = 'pointer';
-    connWidget.addEventListener('click', () => {
+    connWidget.addEventListener('click', async () => {
       if ($('dash').classList.contains('hidden')) {
-        if (!unlockDashboardPreview()) return;
+        if (!(await unlockDashboardPreview())) return;
         dashboardPreview = true;
         connectViewPinned = false;
         $('dash').classList.remove('hidden');

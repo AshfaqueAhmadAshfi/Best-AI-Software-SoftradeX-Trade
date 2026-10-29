@@ -22,24 +22,10 @@
   margin: 0 0 10px;
 }
 .about-side-trigger {
-  position: fixed;
-  z-index: 30;
-  top: 50%;
-  left: 0;
-  transform: translateY(-50%);
-  border: 1px solid rgba(37, 99, 235, .28);
-  border-left: 0;
-  border-radius: 0 10px 10px 0;
-  padding: 13px 9px;
-  background: rgba(255, 255, 255, .92);
-  color: #1d4ed8;
-  writing-mode: vertical-rl;
-  font: 800 10px "Space Grotesk", sans-serif;
-  letter-spacing: .08em;
-  cursor: pointer;
-  box-shadow: 4px 10px 22px -16px rgba(15, 23, 42, .55);
+  min-height: 92px;
+  color: #bfdbfe;
 }
-.about-side-trigger:hover { background: #eff6ff; }
+.about-side-trigger:hover { color: #fff; }
 .about-me-modal {
   position: fixed;
   inset: 0;
@@ -87,10 +73,37 @@
   font-size: 18px;
   cursor: pointer;
 }
+.dashboard-password-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(15, 23, 42, .5);
+  backdrop-filter: blur(8px);
+}
+.dashboard-password-dialog {
+  position: relative;
+  width: min(390px, 100%);
+  padding: 25px;
+  border: 1px solid rgba(255, 255, 255, .85);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 30px 80px -30px rgba(15, 23, 42, .7);
+  color: #0f172a;
+}
+.dashboard-password-dialog h2 { margin: 0 0 6px; font: 900 22px "Outfit", sans-serif; }
+.dashboard-password-help { margin: 0 0 16px; color: #64748b; font: 500 12px/1.5 "Outfit", sans-serif; }
+.dashboard-password-dialog label { display: block; margin-bottom: 6px; color: #475569; font: 800 11px "Space Grotesk", sans-serif; }
+.dashboard-password-dialog input { width: 100%; box-sizing: border-box; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 10px; color: #0f172a; background: #fff; font: 800 16px "JetBrains Mono", monospace; letter-spacing: .16em; }
+.dashboard-password-dialog input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .14); }
+.dashboard-password-error { min-height: 18px; margin: 7px 0 0; color: #dc2626; font: 700 11px "Outfit", sans-serif; }
+.dashboard-password-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 @media (max-width: 560px) {
   .about-me-dialog { grid-template-columns: 92px minmax(0, 1fr); gap: 13px; padding: 16px; }
   .about-me-photo { width: 92px; height: 122px; }
   .about-me-copy h2 { font-size: 19px; }
   .about-me-copy p { font-size: 12px; }
-  .about-side-trigger { font-size: 9px; padding: 11px 7px; }
+  .about-side-trigger { min-height: 92px; }
 }

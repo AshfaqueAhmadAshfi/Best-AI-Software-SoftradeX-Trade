@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="/static/styles-mech.css?v=20261018_mktflow" />
     <!-- Clean white & blue glassmorphism theme — must load last so it wins the cascade -->
     <link rel="stylesheet" href="/static/styles-glass.css?v=20261029_zz1" />
-    <link rel="stylesheet" href="/static/about.css?v=20261030_about1" />
+    <link rel="stylesheet" href="/static/about.css?v=20261030_about2" />
   <link rel="icon" type="image/jpeg" href="/static/logo.jpg" />
 </head>
 
@@ -160,7 +160,6 @@
 
     <!-- ================= DASHBOARD ================= -->
     <main id="dash" class="dash hidden">
-      <button type="button" class="about-side-trigger" data-about-open>ABOUT ME</button>
 
       <!-- account strip -->
       <section class="account-strip">
@@ -209,6 +208,10 @@
           <span class="rail-chev">‹</span>
           <span class="rail-txt" data-i18n="flowStepHistory">HISTORY</span>
           <span class="rail-badge" id="rail-hist-count">0</span>
+        </button>
+        <button type="button" class="flow-rail flow-rail-left about-side-trigger" data-about-open title="About the developer">
+          <span class="rail-chev">‹</span>
+          <span class="rail-txt">ABOUT ME</span>
         </button>
       </div>
       <div class="flow-rails-right-wrap">
@@ -2019,9 +2022,25 @@
     </div>
   </div>
 
+  <div id="dashboard-password-modal" class="dashboard-password-modal hidden" role="dialog" aria-modal="true" aria-labelledby="dashboard-password-title">
+    <form id="dashboard-password-form" class="dashboard-password-dialog">
+      <button type="button" class="about-me-close" id="dashboard-password-cancel" aria-label="Close">&times;</button>
+      <p class="about-me-kicker">SECURE DASHBOARD ACCESS</p>
+      <h2 id="dashboard-password-title">Enter Dashboard Password</h2>
+      <p class="dashboard-password-help">Password না দিলে dashboard access পাওয়া যাবে না।</p>
+      <label for="dashboard-password-input">Password</label>
+      <input id="dashboard-password-input" type="password" inputmode="numeric" autocomplete="off" required />
+      <p id="dashboard-password-error" class="dashboard-password-error" aria-live="polite"></p>
+      <div class="dashboard-password-actions">
+        <button type="button" class="btn ghost" id="dashboard-password-cancel-text">Cancel</button>
+        <button type="submit" class="btn primary">Unlock Dashboard</button>
+      </div>
+    </form>
+  </div>
+
   <script src="/static/softradex-terminal.js?v=20261029_whales3"></script>
   <script src="/static/chart-news-events.js?v=20261029_news14"></script>
-  <script src="/static/app.js?v=20261030_about1"></script>
+  <script src="/static/app.js?v=20261030_about2"></script>
   <script src="/static/traders-terminal.js?v=20261022_globalflow3"></script>
   <script src="/static/binance-order-flow-terminal.js?v=20261025_open14v1"></script>
   <script src="/static/multi-exchange-order-flow.js?v=20261025_venues8"></script>
