@@ -2853,6 +2853,153 @@ body.wires-on .flow-tag,
 }
 
 /* ==========================================================================
+   COMBINED 12-VENUE ORDER FLOW + TRADERS OPEN POSITIONS
+   ========================================================================== */
+.venue-flow-board {
+  flex: 0 0 auto;
+  margin: 6px 0 0;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 9px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(16, 185, 129, 0.06), transparent 55%),
+    linear-gradient(180deg, rgba(11, 16, 24, 0.96), rgba(8, 11, 18, 0.94));
+  font-family: var(--mono, "JetBrains Mono", monospace);
+  overflow: hidden;
+}
+.vfb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+  flex-wrap: wrap;
+}
+.vfb-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vfb-kicker { color: #38bdf8; font-size: 7px; font-weight: 700; letter-spacing: 0.16em; }
+.vfb-title strong { color: #e2e8f0; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
+.vfb-title strong em { color: #64748b; font-style: normal; }
+.vfb-market { color: #f0b90b; font-size: 8px; font-weight: 700; letter-spacing: 0.08em; }
+.vfb-totals { display: flex; gap: 6px; }
+.vfb-total {
+  min-width: 94px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.vfb-total span { color: #94a3b8; font-size: 6.5px; letter-spacing: 0.06em; }
+.vfb-total b { margin-left: auto; font-size: 11.5px; line-height: 1; white-space: nowrap; }
+.vfb-total em { font-style: normal; font-size: 6.5px; }
+.vfb-total.buy b, .vfb-total.buy em { color: #0ecb81; }
+.vfb-total.sell b, .vfb-total.sell em { color: #f6465d; }
+.vfb-split { display: flex; height: 3px; background: rgba(255, 255, 255, 0.04); }
+.vfb-split i { display: block; height: 100%; transition: width 0.25s ease; }
+.vfb-split .buy { background: #0ecb81; }
+.vfb-split .sell { background: #f6465d; }
+.vfb-source-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: #64748b;
+  font-size: 7px;
+  letter-spacing: 0.03em;
+  flex-wrap: wrap;
+}
+.vfb-source-line b { color: #cbd5e1; font-weight: 600; }
+.vfb-source-line span:nth-child(1) b:nth-child(1) { color: #0ecb81; }
+.vfb-source-line span:nth-child(1) b:nth-child(2) { color: #f6465d; }
+.vfb-source-line span:nth-child(2) b:nth-child(1) { color: #f0b90b; }
+.vfb-source-line span:nth-child(2) b:nth-child(2) { color: #f0b90b; }
+.vfb-source-line span:nth-child(3) b:nth-child(1) { color: #38bdf8; }
+.vfb-source-line span:nth-child(3) b:nth-child(2) { color: #38bdf8; }
+.vfb-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 3px;
+  padding: 4px 5px;
+}
+.vfb-venue {
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.018);
+}
+.vfb-venue.off { opacity: 0.45; }
+.vfb-venue.extra { border-color: rgba(56, 189, 248, 0.22); background: rgba(56, 189, 248, 0.035); }
+.vfb-venue[data-vfb="binance"] .vfb-venue-top b { color: #f0b90b; }
+.vfb-venue[data-vfb="traders"] .vfb-venue-top b { color: #38bdf8; }
+.vfb-venue-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.vfb-venue-top b { color: #cbd5e1; font-size: 7.5px; letter-spacing: 0.04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vfb-venue-top em { flex: 0 0 auto; color: #64748b; font-style: normal; font-size: 6.5px; }
+.vfb-venue-vals { display: flex; justify-content: space-between; gap: 4px; margin-top: 2px; font-size: 7px; }
+.vfb-venue-vals .buy { color: #0ecb81; }
+.vfb-venue-vals .sell { color: #f6465d; }
+.vfb-venue-vals b { font-size: 7.5px; }
+.vfb-venue-bar { display: flex; height: 2px; margin-top: 3px; background: rgba(255, 255, 255, 0.04); border-radius: 1px; overflow: hidden; }
+.vfb-venue-bar i { display: block; height: 100%; transition: width 0.25s ease; }
+.vfb-venue-bar .buy { background: #0ecb81; }
+.vfb-venue-bar .sell { background: #f6465d; }
+.vfb-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  color: #475569;
+  font-size: 6.5px;
+  letter-spacing: 0.04em;
+}
+@media (max-width: 560px) {
+  .vfb-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vfb-total { min-width: 92px; }
+}
+
+/* The main chart's right rail carries the combined board instead of a second
+   copy of the Traders terminal. */
+.binance-book-sidebar .venue-flow-board {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+}
+.binance-book-sidebar .vfb-head { padding: 7px 8px; gap: 6px; }
+.binance-book-sidebar .vfb-title strong { font-size: 9px; }
+.binance-book-sidebar .vfb-total { min-width: 78px; padding: 4px 5px; }
+.binance-book-sidebar .vfb-source-line { padding: 4px 8px; gap: 4px; justify-content: flex-start; }
+.binance-book-sidebar .vfb-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(38px, 1fr);
+  align-content: stretch;
+  gap: 4px;
+  padding: 5px;
+}
+.binance-book-sidebar .vfb-venue {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 5px 6px;
+}
+.binance-book-sidebar .vfb-venue-top b { font-size: 8px; }
+.binance-book-sidebar .vfb-venue-vals { font-size: 7.5px; }
+.binance-book-sidebar .vfb-foot { padding: 4px 8px; flex-wrap: wrap; }
+
+/* ==========================================================================
    LIVE TRADERS ORDER FLOW TERMINAL (Stage 04 - Connected to 01 Market)
    ========================================================================== */
 .flow-curve-shell {

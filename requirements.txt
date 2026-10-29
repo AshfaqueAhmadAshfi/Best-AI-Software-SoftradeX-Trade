@@ -3,5 +3,8 @@ fastapi>=0.110
 uvicorn>=0.27
 websockets>=12
 
+# cPanel / Passenger bridge: WSGI entry point for the ASGI app (passenger_wsgi.py)
+a2wsgi>=1.10
+
 # Official MetaTrader 5 bridge (Windows only)
 MetaTrader5>=5.0.45; sys_platform == "win32"

@@ -1,0 +1,26 @@
+# Caddy reads DOMAIN from the environment (.env next to docker-compose.yml).
+# A free Let's Encrypt certificate is issued automatically on first start;
+# port 80 and 443 must be reachable and the DNS record must already point here.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# WebSocket upgrades are handled by reverse_proxy automatically.
+	reverse_proxy app:8080
+
+	header {
+		# the dashboard is served from this origin only
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		-Server
+	}
+
+	# ---------------------------------------------------------------
+	# Optional: password-protect the whole dashboard.
+	# Generate a hash with:  docker run --rm caddy:2-alpine caddy hash-password --plaintext 'YOURPASS'
+	# then uncomment and paste it below.
+	#
+	# basic_auth {
+	# 	admin $2a$14$paste_the_generated_hash_here
+	# }
+	# ---------------------------------------------------------------
+}

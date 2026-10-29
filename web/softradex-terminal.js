@@ -27,6 +27,7 @@
   const TF_SECONDS = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 };
   const PRICE_AXIS_W = 76;
   let marketsReady = false;
+  let feedSource = 'mt5';          // 'public' when no MT5 terminal is connected
   let pendingSymbol = '';
   let currentSymbol = '';
   let currentInterval = '5m';
@@ -84,8 +85,10 @@
 
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
-      // Keep real-time WebSocket verified whale data intact
-      if (c.whale && c.whale.realtime) continue;
+      // Keep real-time WebSocket verified whale data and the real whale-tape
+      // prints intact - those say WHO bought, the volume scan only says WHEN
+      // volume was unusual.
+      if (c.whale && (c.whale.realtime || c.whale.tape)) continue;
 
       if (c.volume >= threshold && c.volume > mean * 1.35) {
         const isBull = c.close >= c.open;
@@ -108,6 +111,46 @@
           realtime: false
         };
       }
+    }
+  }
+
+  // Real big prints (the whale tape) put a 🐋 BUY / 🐋 SELL marker on the exact
+  // candle they happened in, at the side the whales took. The tape is the same
+  // one the whale board reads, so chart and board can never disagree.
+  let whaleTape = null;
+
+  // Candle times arrive in ms from the public feed (and in seconds from MT5),
+  // so everything is compared in ms here.
+  function tapeMs(v) {
+    const n = Number(v);
+    if (!(n > 0)) return 0;
+    return n < 1e12 ? n * 1000 : n;
+  }
+
+  function applyWhaleTape(prints, sym) {
+    if (!Array.isArray(prints) || !prints.length) return;
+    if (sym && currentSymbol && String(sym) !== String(currentSymbol)) return;
+    if (!klines.length) return;
+    for (let i = 0; i < prints.length; i++) {
+      const p = prints[i];
+      const t = tapeMs(p.tm);
+      if (!t) continue;
+      let idx = -1;
+      for (let k = klines.length - 1; k >= 0; k--) {
+        if (tapeMs(klines[k].time) <= t) { idx = k; break; }
+      }
+      if (idx < 0) continue;
+      const c = klines[idx];
+      if (c.whale && c.whale.realtime) continue;
+      c.whale = {
+        side: String(p.side || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY',
+        vol: Number(p.ticks) || 0,
+        ratio: '',
+        px: Number(p.px) || 0,
+        tm: Number(p.tm) || 0,
+        realtime: false,
+        tape: true,
+      };
     }
   }
 
@@ -192,6 +235,10 @@
     return String(v == null ? '' : v).toUpperCase().replace(/[^A-Z0-9]/g, '');
   }
 
+  function feedLabel() {
+    return feedSource === 'public' ? 'Public Feed' : FEED_NAME;
+  }
+
   function setStatus(title, sub, kind) {
     const overlay = $('chart-status-overlay');
     if (!overlay) return;
@@ -226,17 +273,31 @@
   }
 
   // ------------------------------------------------------- Exness catalog
-  async function apiJson(path) {
-    const resp = await fetch(path, { cache: 'no-store', headers: { Accept: 'application/json' } });
-    if (!resp.ok) {
-      let detail = 'HTTP ' + resp.status;
-      try {
-        const j = await resp.json();
-        if (j && j.detail) detail = j.detail;
-      } catch (e) {}
-      throw new Error(detail);
+  async function apiJson(path, timeoutMs) {
+    // A wedged request must never stall the chart (or a polling host): every
+    // call is bounded, so a slow public feed just fails this round.
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctrl
+      ? setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, Number(timeoutMs) || 15000)
+      : null;
+    try {
+      const resp = await fetch(path, {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+        signal: ctrl ? ctrl.signal : undefined
+      });
+      if (!resp.ok) {
+        let detail = 'HTTP ' + resp.status;
+        try {
+          const j = await resp.json();
+          if (j && j.detail) detail = j.detail;
+        } catch (e) {}
+        throw new Error(detail);
+      }
+      return await resp.json();
+    } finally {
+      if (timer) clearTimeout(timer);
     }
-    return resp.json();
   }
 
   function resolveSymbol(sym) {
@@ -294,7 +355,7 @@
       const m = MARKETS[key] || {};
       const isActive = key === currentSymbol;
       return '<button type="button" class="b-tab-btn' + (isActive ? ' active' : '') + '" data-symbol="' + escHtml(key) + '" data-kind="' + escHtml(m.kind || '') + '" title="' +
-        escHtml((m.description || key) + ' · Exness MT5') + '">' +
+        escHtml((m.description || key) + ' · ' + feedLabel()) + '">' +
         '<span class="b-icon">' + escHtml(m.icon || '📊') + '</span> ' +
         '<span class="b-sym">' + escHtml(m.label || key) + '</span>' +
         '<span class="b-pair">/' + escHtml(m.pair || 'USD') + '</span></button>';
@@ -333,6 +394,9 @@
         scheduleMarketsRetry();
         return false;
       }
+      feedSource = data.source === 'public' ? 'public' : 'mt5';
+      const proTag = document.querySelector('#binance-terminal-section .term-pro-tag');
+      if (proTag && feedSource === 'public') proTag.textContent = 'PUBLIC CHART';
       Object.keys(MARKETS).forEach(k => { delete MARKETS[k]; });
       data.symbols.forEach(m => {
         MARKETS[m.symbol] = Object.assign({}, m, {
@@ -351,6 +415,7 @@
       const first = wanted || resolveSymbol('XAUUSDm') || Object.keys(MARKETS)[0];
       pendingSymbol = '';
       if (first) switchMarket(first, { silent: true });
+      if (feedSource === 'public') scheduleSourceRecheck();
       return true;
     } catch (err) {
       setStatus(FEED_NAME + ' feed unavailable', String(err && err.message ? err.message : err), 'error');
@@ -369,6 +434,26 @@
       loadMarkets();
     }, marketsRetryMs);
     marketsRetryMs = Math.min(marketsRetryMs * 2, 10000);
+  }
+
+  // While the chart is on public data, keep looking for the MT5 terminal. As
+  // soon as it appears the catalogue is reloaded and the live chart is
+  // resubscribed, so the terminal takes over without a page reload.
+  let sourceRecheckTimer = null;
+  function scheduleSourceRecheck() {
+    if (sourceRecheckTimer) return;
+    sourceRecheckTimer = setTimeout(async () => {
+      sourceRecheckTimer = null;
+      if (feedSource !== 'public') return;
+      pendingSymbol = currentSymbol || 'XAUUSDm';
+      const ok = await loadMarkets();
+      if (!ok) return;
+      if (feedSource === 'mt5' && currentSymbol) {
+        if (feed && feed.readyState === WebSocket.OPEN) sendSubscription();
+        else connectFeed();
+      }
+      if (feedSource === 'public') scheduleSourceRecheck();
+    }, 30000);
   }
 
   let chartRafPending = false;
@@ -392,6 +477,118 @@
     return sum / period;
   }
 
+  // ------------------------------------------------ HTTP polling fallback
+  // cPanel / Passenger cannot hold a WebSocket open, so on such a host the same
+  // chart is built from the REST endpoints. Everything downstream is shared:
+  // a poll produces the exact frame shape the socket sends, so the renderer,
+  // whale scan, legend and ticker ribbon need no special case.
+  let feedWsFails = 0;
+  let pollTimer = null;
+  let pollBusy = false;
+  let pollCycle = 0;
+  let pollTicker = null;
+  let pollTickerSymbol = '';
+
+  async function pollFeedOnce() {
+    if (pollBusy || !currentSymbol) return;
+    pollBusy = true;
+    const symbol = currentSymbol;
+    const tf = currentInterval;
+    // While the TradingView chart draws the candles itself (tv-chart.js),
+    // this host does not have to fetch 360 bars every five seconds - only
+    // the tiny ticker request the price ribbon needs still runs. That is
+    // the difference between a chart that feels slow on a shared host and
+    // one that does not.
+    if (window.SOFT_TV_ACTIVE) {
+      try {
+        const ticker = await apiJson('/api/chart/ticker?symbol=' + encodeURIComponent(symbol), 12000);
+        if (symbol !== currentSymbol || !ticker) return;
+        pollTicker = ticker;
+        pollTickerSymbol = symbol;
+        lastTickAt = Date.now();
+        setFeedPulse(true);
+        updateTickerDisplay(ticker);
+      } catch (e) {
+        setFeedPulse(false);
+      } finally {
+        // this branch returns early - it must release the guard itself or
+        // every later cycle is skipped and the price ribbon freezes
+        pollBusy = false;
+      }
+      return;
+    }
+    try {
+      const data = await apiJson('/api/chart/candles?symbol=' + encodeURIComponent(symbol) +
+        '&tf=' + encodeURIComponent(tf) + '&count=360', 20000);
+      // The 24h ribbon changes slowly: refreshing it every third cycle keeps
+      // the shared host from serving two chart requests every five seconds.
+      pollCycle += 1;
+      if (pollTickerSymbol !== symbol || pollCycle % 3 === 1) {
+        try {
+          pollTicker = await apiJson('/api/chart/ticker?symbol=' + encodeURIComponent(symbol), 12000);
+          pollTickerSymbol = symbol;
+        } catch (e) { /* keep the previous ribbon */ }
+      }
+      const ticker = pollTickerSymbol === symbol ? pollTicker : null;
+      // a symbol/timeframe switch while the request was in flight wins
+      if (symbol !== currentSymbol || tf !== currentInterval) return;
+      if (!data || !data.bars || !data.bars.length) {
+        setStatus('No candles from ' + feedLabel(),
+          'The public feed returned no bars for ' + symbol + '.', 'error');
+        return;
+      }
+      lastFrameAt = Date.now();
+      lastTickAt = Date.now();
+      setFeedPulse(true);
+      handleFeedFrame({
+        t: 'snap', s: symbol, tf: tf, meta: data.meta, bars: data.bars, ticker: ticker
+      });
+    } catch (err) {
+      setFeedPulse(false);
+    } finally {
+      pollBusy = false;
+    }
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    setFeedPulse(true);
+    void pollFeedOnce();
+    pollTimer = setInterval(() => { void pollFeedOnce(); }, 5000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  function pollNow() {
+    if (pollTimer) void pollFeedOnce();
+  }
+
+  // tv-chart.js turns its TradingView chart off (user toggle, or a market
+  // TradingView has no symbol for) and asks for one fresh frame: without it
+  // the built-in chart would stay on the last picture it had, because the
+  // candle fetches were skipped while TradingView was on screen.
+  window.addEventListener('chart:refresh', function () {
+    if (feed && feed.readyState === WebSocket.OPEN) sendSubscription();
+    else pollNow();
+  });
+
+  // chart-overlay.js publishes the whale tape every time it refreshes it. The
+  // candle chart paints the markers from it (the TradingView frame cannot take
+  // drawings, which is why this lives here and not in the overlay).
+  window.addEventListener('whale:prints', function (ev) {
+    const d = (ev && ev.detail) || {};
+    whaleTape = { symbol: d.symbol || '', prints: Array.isArray(d.prints) ? d.prints : [] };
+    applyWhaleTape(whaleTape.prints, whaleTape.symbol);
+    // Only the candle chart paints these - a repaint while TradingView owns
+    // the box would cost a frame and show nothing.
+    if (!window.SOFT_TV_ACTIVE && window.SoftradeXTerminal &&
+        typeof window.SoftradeXTerminal.refresh === 'function') {
+      window.SoftradeXTerminal.refresh();
+    }
+  });
+
   // ------------------------------------------------------- live Exness feed
   function connectFeed() {
     if (feed && (feed.readyState === WebSocket.CONNECTING || feed.readyState === WebSocket.OPEN)) return;
@@ -410,6 +607,8 @@
     feed = socket;
     socket.onopen = () => {
       feedRetry = 0;
+      feedWsFails = 0;
+      stopPolling();
       lastFrameAt = Date.now();
       setFeedPulse(true);
       sendSubscription();
@@ -425,13 +624,19 @@
     };
     socket.onclose = () => {
       if (feed === socket) feed = null;
-      setFeedPulse(false);
+      feedWsFails += 1;
+      // A WSGI host refuses every upgrade: two dead sockets in a row means
+      // "no WebSockets here", so switch the chart to REST polling.
+      if (feedWsFails >= 2) startPolling();
+      if (!pollTimer) setFeedPulse(false);
       feedRetry = Math.min(feedRetry + 1, 8);
-      feedReconnectTimer = setTimeout(connectFeed, Math.min(400 * feedRetry, 4000));
+      feedReconnectTimer = setTimeout(connectFeed,
+        pollTimer ? 30000 : Math.min(400 * feedRetry, 4000));
     };
   }
 
   function sendSubscription() {
+    pollNow();   // no-op unless the chart is on the REST polling fallback
     if (!feed || feed.readyState !== WebSocket.OPEN || !currentSymbol) return;
     feed.send(JSON.stringify({ type: 'sub', symbol: currentSymbol, tf: currentInterval }));
   }
@@ -450,7 +655,7 @@
     } else if (msg.t === 'error') {
       if (msg.s && msg.s !== currentSymbol) return;
       chartReady = false;
-      setStatus('Exness chart error', msg.message || 'The terminal could not return this chart.', 'error');
+      setStatus('Chart error', msg.message || 'The feed could not return this chart.', 'error');
       // The server retries on its own; this is the belt-and-braces path for a
       // terminal that was restarted mid-snapshot.
       if (!feedErrorRetryTimer) {
@@ -480,11 +685,12 @@
     })).filter(c => isFinite(c.time) && isFinite(c.close));
     if (!klines.length) {
       chartReady = false;
-      setStatus('No candles from ' + FEED_NAME,
-        'Check that ' + currentSymbol + ' is visible in the MetaTrader 5 terminal.', 'error');
+      setStatus('No candles from ' + feedLabel(),
+        'Check that ' + currentSymbol + ' is available on ' + feedLabel() + '.', 'error');
       return;
     }
     detectWhaleActivities(klines);
+    if (whaleTape) applyWhaleTape(whaleTape.prints, whaleTape.symbol);
     chartReady = true;
     lastTickAt = Date.now();
     setStatus('', '', '');
@@ -493,7 +699,8 @@
     const legendSym = $('b-legend-sym');
     if (legendSym) {
       legendSym.textContent = (m.label || currentSymbol) + ' / ' + (m.pair || 'USD') +
-        ' · ' + currentInterval.toUpperCase();
+        ' · ' + currentInterval.toUpperCase() +
+        (feedSource === 'public' ? ' · PUBLIC' : '');
     }
     renderChart();
     updateLegend(klines[klines.length - 1]);
@@ -535,6 +742,7 @@
     if (now - lastWhaleScan > 2500) {
       lastWhaleScan = now;
       detectWhaleActivities(klines);
+      if (whaleTape) applyWhaleTape(whaleTape.prints, whaleTape.symbol);
     }
     const open24 = Number(tickerData.open24) || 0;
     updateTickerDisplay({
@@ -601,7 +809,8 @@
     const elC = $('b-ohlc-c');
     const elV = $('b-ohlc-v');
 
-    if (elSym) elSym.textContent = `${meta.label} · ${currentInterval.toUpperCase()}`;
+    if (elSym) elSym.textContent = `${meta.label} / ${meta.pair || 'USD'} · ${currentInterval.toUpperCase()}` +
+      (feedSource === 'public' ? ' · PUBLIC' : '');
     if (elO) elO.textContent = formatNumber(candle.open, dec);
     if (elH) elH.textContent = formatNumber(candle.high, dec);
     if (elL) elL.textContent = formatNumber(candle.low, dec);
@@ -655,7 +864,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // 1. Clear background
-    ctx.fillStyle = '#0b0e14';
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
 
     const priceWidth = PRICE_AXIS_W; // Right axis reservation
@@ -736,16 +945,18 @@
     }
 
     // 3. Draw Background Grid Lines
-    ctx.strokeStyle = '#181e2b';
+    ctx.strokeStyle = '#e6edf9';
     ctx.lineWidth = 1;
 
-    // Horizontal Price Grids (4 lines)
-    ctx.fillStyle = '#64748b';
-    ctx.font = '10px "JetBrains Mono", monospace';
+    // Horizontal Price Grids (4 lines) - tick prices must stay readable on the
+    // white surface and must not fight the last-price badge below
+    ctx.fillStyle = '#475569';
+    ctx.font = '600 10px "JetBrains Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
     const gridSteps = 4;
+    const lastTagY = klines.length ? priceToY(klines[klines.length - 1].close) : -999;
     for (let g = 0; g <= gridSteps; g++) {
       const y = candleH * (g / gridSteps);
       const priceAtY = plotMax - (g / gridSteps) * plotRange;
@@ -755,8 +966,12 @@
       ctx.lineTo(chartW, y);
       ctx.stroke();
 
-      // Right axis tick text
-      ctx.fillText(formatNumber(priceAtY, MARKETS[currentSymbol]?.decimals || 2), chartW + 6, y);
+      // Right axis tick text - clamped inside the canvas (drawn at y=0 the top
+      // label was clipped in half) and skipped where the price badge sits
+      const labelY = Math.min(candleH - 8, Math.max(8, y));
+      if (Math.abs(labelY - lastTagY) > 12) {
+        ctx.fillText(formatNumber(priceAtY, MARKETS[currentSymbol]?.decimals || 2), chartW + 6, labelY);
+      }
     }
 
     // Vertical Time Grids (Dynamic intervals based on zoom level)
@@ -783,7 +998,7 @@
       const vRatio = maxVol > 0 ? (c.volume / maxVol) : 0;
       const barH = vRatio * (volH - 6);
       const isUp = c.close >= c.open;
-      ctx.fillStyle = isUp ? 'rgba(14, 203, 129, 0.35)' : 'rgba(246, 70, 93, 0.35)';
+      ctx.fillStyle = isUp ? 'rgba(5, 150, 105, 0.30)' : 'rgba(220, 38, 38, 0.24)';
       ctx.fillRect(x - candleBarW / 2, chartH - barH, candleBarW, barH);
     }
 
@@ -812,8 +1027,8 @@
       ctx.stroke();
     }
 
-    drawLine(sma7, '#00f0ff'); // Cyan SMA7
-    drawLine(sma25, '#A855F7'); // Purple SMA25
+    drawLine(sma7, '#2563eb'); // Blue SMA7
+    drawLine(sma25, '#7c3aed'); // Violet SMA25
 
     // 5.5. Draw Whale Volumetric Aura Glows
     for (let i = 0; i < klines.length; i++) {
@@ -822,7 +1037,7 @@
       const x = candleIndexToX(i);
       if (x < -50 || x > chartW + 50) continue;
       const isBuy = c.whale.side === 'BUY';
-      const auraColor = isBuy ? 'rgba(14, 203, 129, ' : 'rgba(246, 70, 93, ';
+      const auraColor = isBuy ? 'rgba(5, 150, 105, ' : 'rgba(220, 38, 38, ';
 
       const yHigh = priceToY(c.high);
       const yLow = priceToY(c.low);
@@ -845,7 +1060,7 @@
       if (x < -candleSlot * 2 || x > chartW + candleSlot * 2) continue;
       const c = klines[i];
       const isUp = c.close >= c.open;
-      const color = isUp ? '#0ECB81' : '#F6465D';
+      const color = isUp ? '#059669' : '#dc2626';
 
       const yOpen = priceToY(c.open);
       const yClose = priceToY(c.close);
@@ -901,7 +1116,7 @@
         } else {
           const pad = 4;
           const width = ctx.measureText(text).width + pad * 2;
-          ctx.fillStyle = 'rgba(7, 12, 20, 0.86)';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
           ctx.fillRect(x - width / 2, y - 7, width, 14);
           ctx.fillStyle = color;
           ctx.fillText(text, x, y);
@@ -910,10 +1125,10 @@
       };
 
       if (flow.buy > 0) {
-        drawFlowLabel(`BUY ${currencyMark(currentSymbol)}${formatCompact(flow.buy)}`, labelYTop, '#0ECB81', -1);
+        drawFlowLabel(`BUY ${currencyMark(currentSymbol)}${formatCompact(flow.buy)}`, labelYTop, '#059669', -1);
       }
       if (flow.sell > 0) {
-        drawFlowLabel(`SELL ${currencyMark(currentSymbol)}${formatCompact(flow.sell)}`, labelYBottom, '#F6465D', 1);
+        drawFlowLabel(`SELL ${currencyMark(currentSymbol)}${formatCompact(flow.sell)}`, labelYBottom, '#dc2626', 1);
       }
       ctx.restore();
     }
@@ -942,7 +1157,7 @@
         badgeY = yLow + 8;
 
         // Pointer line from low wick tip to badge top
-        ctx.strokeStyle = '#0ECB81';
+        ctx.strokeStyle = '#059669';
         ctx.lineWidth = 1.2;
         ctx.setLineDash([2, 2]);
         ctx.beginPath();
@@ -953,17 +1168,17 @@
 
         // Badge Container
         drawRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, 3.5);
-        ctx.fillStyle = '#06281b'; // Deep emerald dark
+        ctx.fillStyle = '#dcfce7'; // Soft emerald tint
         ctx.fill();
-        ctx.strokeStyle = '#0ECB81';
+        ctx.strokeStyle = '#059669';
         ctx.lineWidth = 1.2;
-        ctx.shadowColor = 'rgba(14, 203, 129, 0.7)';
+        ctx.shadowColor = 'rgba(5, 150, 105, 0.35)';
         ctx.shadowBlur = 7;
         ctx.stroke();
 
         // Badge Text
         ctx.shadowBlur = 0;
-        ctx.fillStyle = '#0ECB81';
+        ctx.fillStyle = '#059669';
         ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -973,7 +1188,7 @@
         badgeY = yHigh - badgeH - 8;
 
         // Pointer line from high wick tip to badge bottom
-        ctx.strokeStyle = '#F6465D';
+        ctx.strokeStyle = '#dc2626';
         ctx.lineWidth = 1.2;
         ctx.setLineDash([2, 2]);
         ctx.beginPath();
@@ -984,17 +1199,17 @@
 
         // Badge Container
         drawRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, 3.5);
-        ctx.fillStyle = '#2c0c12'; // Deep ruby dark
+        ctx.fillStyle = '#fee2e2'; // Soft ruby tint
         ctx.fill();
-        ctx.strokeStyle = '#F6465D';
+        ctx.strokeStyle = '#dc2626';
         ctx.lineWidth = 1.2;
-        ctx.shadowColor = 'rgba(246, 70, 93, 0.7)';
+        ctx.shadowColor = 'rgba(220, 38, 38, 0.3)';
         ctx.shadowBlur = 7;
         ctx.stroke();
 
         // Badge Text
         ctx.shadowBlur = 0;
-        ctx.fillStyle = '#F6465D';
+        ctx.fillStyle = '#dc2626';
         ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -1004,9 +1219,9 @@
       // If active candle has live whale trade, draw glowing radar pulse ring
       if (isLast && c.whale.realtime) {
         const pulseY = priceToY(c.close);
-        ctx.strokeStyle = isBuy ? '#0ECB81' : '#F6465D';
+        ctx.strokeStyle = isBuy ? '#059669' : '#dc2626';
         ctx.lineWidth = 1.5;
-        ctx.shadowColor = isBuy ? '#0ECB81' : '#F6465D';
+        ctx.shadowColor = isBuy ? '#059669' : '#dc2626';
         ctx.shadowBlur = 10;
         ctx.beginPath();
         ctx.arc(x, pulseY, 7, 0, Math.PI * 2);
@@ -1042,7 +1257,7 @@
       const last = klines[klines.length - 1];
       const lastY = priceToY(last.close);
       const isUp = last.close >= last.open;
-      const tagColor = isUp ? '#0ECB81' : '#F6465D';
+      const tagColor = isUp ? '#059669' : '#dc2626';
 
       // Dashed line across chart
       ctx.strokeStyle = tagColor;
@@ -1073,28 +1288,28 @@
     ctx.save();
     drawRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, 4);
     if (panOffset > 10) {
-      ctx.fillStyle = 'rgba(0, 240, 255, 0.18)';
+      ctx.fillStyle = 'rgba(37, 99, 235, 0.12)';
       ctx.fill();
-      ctx.strokeStyle = '#00f0ff';
+      ctx.strokeStyle = '#2563eb';
       ctx.lineWidth = 1.2;
-      ctx.shadowColor = 'rgba(0, 240, 255, 0.4)';
+      ctx.shadowColor = 'rgba(37, 99, 235, 0.3)';
       ctx.shadowBlur = 8;
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      ctx.fillStyle = '#00f0ff';
+      ctx.fillStyle = '#2563eb';
       ctx.font = 'bold 9px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('▶ TO LIVE', badgeX + badgeW / 2, badgeY + badgeH / 2);
     } else {
-      ctx.fillStyle = 'rgba(14, 203, 129, 0.12)';
+      ctx.fillStyle = 'rgba(5, 150, 105, 0.10)';
       ctx.fill();
-      ctx.strokeStyle = 'rgba(14, 203, 129, 0.35)';
+      ctx.strokeStyle = 'rgba(5, 150, 105, 0.30)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.fillStyle = '#0ECB81';
+      ctx.fillStyle = '#059669';
       ctx.font = 'bold 9px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -1104,7 +1319,7 @@
 
     // 8. Draw Crosshair Hover Indicator
     if (crosshair && crosshair.x >= 0 && crosshair.x <= chartW && crosshair.y >= 0 && crosshair.y <= chartH) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.35)';
       ctx.lineWidth = 0.8;
       ctx.setLineDash([3, 3]);
 
@@ -1123,9 +1338,9 @@
 
       // Crosshair Price Tag on Right
       const hoveredPrice = plotMax - (crosshair.y / candleH) * plotRange;
-      ctx.fillStyle = '#334155';
+      ctx.fillStyle = '#e2e8f0';
       ctx.fillRect(chartW + 2, crosshair.y - 8, priceWidth - 4, 16);
-      ctx.fillStyle = '#f8fafc';
+      ctx.fillStyle = '#0f172a';
       ctx.font = '9px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -1135,9 +1350,9 @@
       if (crosshair.candle) {
         const timeText = formatTime(crosshair.candle.time, currentInterval);
         const timeTagW = 60;
-        ctx.fillStyle = '#334155';
+        ctx.fillStyle = '#e2e8f0';
         ctx.fillRect(crosshair.x - timeTagW / 2, chartH + 2, timeTagW, 16);
-        ctx.fillStyle = '#f8fafc';
+        ctx.fillStyle = '#0f172a';
         ctx.font = '9px "JetBrains Mono", monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -1157,33 +1372,33 @@
 
         ctx.save();
         drawRoundRect(ctx, cardX, cardY, cardW, cardH, 6);
-        ctx.fillStyle = 'rgba(11, 15, 23, 0.95)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.97)';
         ctx.fill();
-        ctx.strokeStyle = isBuy ? '#0ECB81' : '#F6465D';
+        ctx.strokeStyle = isBuy ? '#059669' : '#dc2626';
         ctx.lineWidth = 1.2;
-        ctx.shadowColor = isBuy ? 'rgba(14, 203, 129, 0.5)' : 'rgba(246, 70, 93, 0.5)';
+        ctx.shadowColor = isBuy ? 'rgba(5, 150, 105, 0.3)' : 'rgba(220, 38, 38, 0.3)';
         ctx.shadowBlur = 12;
         ctx.stroke();
 
         ctx.shadowBlur = 0;
         ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
-        ctx.fillStyle = isBuy ? '#0ECB81' : '#F6465D';
+        ctx.fillStyle = isBuy ? '#059669' : '#dc2626';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillText(`🐋 WHALE ${isBuy ? 'INFLOW (BUY)' : 'OUTFLOW (SELL)'}`, cardX + 10, cardY + 10);
 
         ctx.font = '9px "JetBrains Mono", monospace';
-        ctx.fillStyle = '#94a3b8';
+        ctx.fillStyle = '#64748b';
         ctx.fillText(`Type: ${hw.realtime ? 'LIVE TAKER ORDER' : 'INSTITUTIONAL ACCUM'}`, cardX + 10, cardY + 28);
 
         const unit = MARKETS[currentSymbol]?.unit || '';
         ctx.fillText(`Whale Vol: `, cardX + 10, cardY + 44);
-        ctx.fillStyle = '#f8fafc';
+        ctx.fillStyle = '#0f172a';
         ctx.fillText(`${formatCompact(hw.vol)} ${unit}`, cardX + 78, cardY + 44);
 
-        ctx.fillStyle = '#94a3b8';
+        ctx.fillStyle = '#64748b';
         ctx.fillText(`Candle Vol: `, cardX + 10, cardY + 58);
-        ctx.fillStyle = '#f8fafc';
+        ctx.fillStyle = '#0f172a';
         ctx.fillText(`${formatCompact(hc.volume)} ${unit}`, cardX + 78, cardY + 58);
 
         ctx.restore();
@@ -1204,11 +1419,11 @@
       ctx.save();
       ctx.globalAlpha = opacity;
       drawRoundRect(ctx, bannerX, bannerY, bannerW, bannerH, 13);
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
       ctx.fill();
-      ctx.strokeStyle = isBuy ? '#0ECB81' : '#F6465D';
+      ctx.strokeStyle = isBuy ? '#059669' : '#dc2626';
       ctx.lineWidth = 1.2;
-      ctx.shadowColor = isBuy ? 'rgba(14, 203, 129, 0.7)' : 'rgba(246, 70, 93, 0.7)';
+      ctx.shadowColor = isBuy ? 'rgba(5, 150, 105, 0.7)' : 'rgba(220, 38, 38, 0.7)';
       ctx.shadowBlur = 12;
       ctx.stroke();
 
@@ -1216,7 +1431,7 @@
       ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = isBuy ? '#0ECB81' : '#F6465D';
+      ctx.fillStyle = isBuy ? '#059669' : '#dc2626';
       const alertMsg = `⚡ LIVE WHALE ${lastWhaleAlert.side}: ${formatNumber(lastWhaleAlert.qty, 2)} ${unit} (${currencyMark(lastWhaleAlert.symbol)}${formatCompact(lastWhaleAlert.usd)})`;
       ctx.fillText(alertMsg, bannerX + bannerW / 2, bannerY + bannerH / 2);
       ctx.restore();
@@ -1255,8 +1470,9 @@
       legendSym.textContent = (meta.label || key) + ' / ' + (meta.pair || 'USD') +
         ' · ' + currentInterval.toUpperCase();
     }
-    setStatus('Loading ' + (meta.label || key) + ' from ' + FEED_NAME + '…',
-      'real MetaTrader 5 candles · ' + currentInterval, 'loading');
+    setStatus('Loading ' + (meta.label || key) + ' from ' + feedLabel() + '…',
+      (feedSource === 'public' ? 'live Binance + Yahoo candles' : 'real MetaTrader 5 candles') +
+        ' · ' + currentInterval, 'loading');
     renderChart();
 
     const priceEl = $('b-live-price');
@@ -1273,6 +1489,7 @@
 
     if (!feed || feed.readyState !== WebSocket.OPEN) connectFeed();
     else sendSubscription();
+    pollNow();   // REST polling hosts reload immediately on a symbol/TF switch
 
     // Keep the existing Traders Order Flow Terminal in sync with the chart.
     if (window.TradersTerminal && typeof window.TradersTerminal.switchMarket === 'function') {
@@ -1291,9 +1508,10 @@
     updateActiveTabs();
     panOffset = 0;
     visibleCandlesCount = 55;
-    setStatus('Loading ' + currentInterval + ' candles…', 'Exness MT5', 'loading');
+    setStatus('Loading ' + currentInterval + ' candles…', feedLabel(), 'loading');
     if (!feed || feed.readyState !== WebSocket.OPEN) connectFeed();
     else sendSubscription();
+    pollNow();   // REST polling hosts reload immediately on a symbol/TF switch
     window.dispatchEvent(new CustomEvent('chart:interval', { detail: { tf: currentInterval } }));
   }
 
@@ -1624,6 +1842,9 @@
     getMarkets: () => Object.keys(MARKETS),
     getLastTickAt: () => lastTickAt,
     refresh: renderChart,
+    // Candles currently carrying a marker from the real whale tape - used by
+    // support to confirm the tape reached the chart.
+    whaleMarks: () => klines.filter(c => c.whale && c.whale.tape).length,
     MARKETS
   };
 

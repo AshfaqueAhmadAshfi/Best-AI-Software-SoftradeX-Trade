@@ -157,7 +157,9 @@ class Engine:
         self.connected_at: Optional[int] = None
         # The dashboard is locked (login page) until an Exness account logs in.
         # An explicit disconnect locks it again and nothing else can unlock it.
-        self.locked = True
+        # Hosted mode (cPanel / Docker, no MT5 bridge) has no account to log in
+        # to, so it opens straight onto the public-feed dashboard.
+        self.locked = not cfg.HOSTED
 
         self.ea_positions: List[Dict[str, Any]] = []
         self.ea_account: Optional[Dict[str, Any]] = None
@@ -1751,8 +1753,13 @@ class Engine:
                                     f"Closed {t.get('symbol')} {t.get('side')} {t.get('volume')} -> {t.get('net_profit', 0):+.2f}")
         self._seen_closed |= current_closed
 
+        hosted = bool(cfg.HOSTED)
         source = "none"
-        if not self.locked:
+        if hosted:
+            # no terminal exists on this host: the dashboard is open and its
+            # numbers come from the public market feeds
+            source = "public"
+        elif not self.locked:
             if self.mode == "live":
                 source = "mt5"
             elif self.ea_last_seen and (time.time() - self.ea_last_seen) <= EA_STALE_SECONDS:
@@ -1760,8 +1767,9 @@ class Engine:
 
         key = self._account_key()
         self._snapshot_data = {
-            "connected": bool(account) and source != "none",
-            "locked": self.locked,
+            "connected": hosted or (bool(account) and source != "none"),
+            "locked": False if hosted else self.locked,
+            "hosted": hosted,
             "status": self.status,
             "mode": self.mode or ("ea" if source == "ea" else None),
             "source": source,
@@ -1789,7 +1797,9 @@ class Engine:
             "session_start": self._session_start_ts,
             "connected_at": self.connected_at,
             "terminal": self.mt5.terminal_path,
-            "terminals": find_terminals(),
+            # a hosted deployment can never use a terminal, so scanning for one
+            # on every pass (a full drive scan on Windows) is pure waste
+            "terminals": [] if hosted else find_terminals(),
             "engine_latency_ms": self.latency_ms,
             "ea": {"connected": bool(self.ea_last_seen and (time.time() - self.ea_last_seen) <= EA_STALE_SECONDS),
                    "last_seen": self.ea_last_seen, "events": self.ea_events},
@@ -2192,6 +2202,10 @@ class Engine:
 
     def _refresh_static(self) -> None:
         self.poll_interval = max(cfg.CONFIG.get("poll_interval_ms", 400) / 1000.0, 0.1)
+        if cfg.HOSTED:
+            # Shared hosting is CPU-limited and every pass hits the public REST
+            # feeds; ~1.5 s keeps the dials live without burning the quota.
+            self.poll_interval = max(self.poll_interval, 1.5)
         self.watch_tick_sec = max(cfg.CONFIG.get("watch_tick_ms", WATCH_TICK_SEC * 1000) / 1000.0, 0.02)
         self.history_interval = max(cfg.CONFIG.get("history_interval_ms", 2000) / 1000.0, 0.5)
         self.history_days = int(cfg.CONFIG.get("history_days", 60))

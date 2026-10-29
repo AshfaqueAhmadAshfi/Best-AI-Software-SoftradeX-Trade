@@ -26,6 +26,34 @@ EA_DIR = BASE_DIR / "ea"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 DB_FILE = DATA_DIR / "trades.db"
 
+
+# ---------------------------------------------------------------- hosted mode
+# cPanel (Passenger), Docker and any plain Linux box have no MetaTrader 5
+# terminal - the bridge package is Windows-only. In that case the same
+# dashboard is served in hosted mode: prices come from the public market feeds
+# (Binance + Yahoo REST), the browser polls over HTTP instead of a WebSocket,
+# and nothing waits for a terminal that cannot exist on that machine.
+def _env_flag(name: str) -> bool:
+    return str(os.environ.get(name, "")).strip().lower() in ("1", "true", "yes", "on")
+
+
+def detect_hosted() -> bool:
+    mode = str(os.environ.get("SOFTRADEX_MODE", "")).strip().lower()
+    if mode in ("public", "hosted", "web"):
+        return True
+    if mode in ("mt5", "local", "desktop"):
+        return False
+    if _env_flag("SOFTRADEX_HOSTED"):
+        return True
+    # The MT5 bridge is Windows-only, so every Linux host (cPanel, Docker, VPS)
+    # is hosted mode. A Windows PC keeps the desktop behaviour even if the
+    # package is not installed yet - the login page then explains how to set up
+    # the terminal instead of pretending to be a public feed dashboard.
+    return os.name != "nt"
+
+
+HOSTED = detect_hosted()
+
 # Exness MT5 servers offered on the login page (from the user's own list).
 EXNESS_SERVERS: Dict[str, list] = {
     "real": [

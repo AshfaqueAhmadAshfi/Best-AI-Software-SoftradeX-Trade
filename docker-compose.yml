@@ -1,0 +1,44 @@
+# One-command deploy:  docker compose up -d --build
+#
+#   app   -> the FastAPI dashboard (API + WebSocket + static UI)
+#   caddy -> public web server: gets the free HTTPS certificate for DOMAIN
+#            and proxies every request (WebSocket included) to the app.
+#
+# State (settings + trade history) lives in the two named volumes below, so a
+# redeploy or `down`/`up` never loses data.
+services:
+  app:
+    build: .
+    container_name: softradex-app
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8080"
+    volumes:
+      - softradex_config:/app/config
+      - softradex_data:/app/data
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: softradex-web
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  softradex_config:
+  softradex_data:
+  caddy_data:
+  caddy_config:

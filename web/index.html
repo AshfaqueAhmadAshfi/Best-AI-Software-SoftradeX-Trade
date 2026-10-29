@@ -4,15 +4,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="color-scheme" content="light" />
   <title>Exness Trading Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/styles.css?v=20261021_bdcard" />
     <link rel="stylesheet" href="/static/styles-premium.css?v=20261018_mktflow" />
-    <link rel="stylesheet" href="/static/styles-ultra.css?v=20261022_exnesscat1" />
+    <link rel="stylesheet" href="/static/styles-ultra.css?v=20261025_flowboard3" />
     <link rel="stylesheet" href="/static/styles-mech.css?v=20261018_mktflow" />
+    <!-- Clean white & blue glassmorphism theme — must load last so it wins the cascade -->
+    <link rel="stylesheet" href="/static/styles-glass.css?v=20261029_whales1" />
   <link rel="icon" type="image/jpeg" href="/static/logo.jpg" />
 </head>
 
@@ -280,6 +282,11 @@
 
           <!-- Actions & Live Open Orders Volume -->
           <div class="binance-term-actions">
+            <!-- TradingView chart <-> built-in chart -->
+            <button type="button" class="term-toggle-btn tv-chart-btn" id="tv-chart-toggle"
+              title="Switch the candle chart between TradingView and the built-in chart">
+              <span class="tv-chart-icon">📈</span> <span id="tv-toggle-text">TradingView · OFF</span>
+            </button>
             <div class="binance-open-vol-strip" id="binance-open-vol-strip">
               <div class="b-open-chip b-open-buy" id="b-open-buy-chip" title="Live Open Buyer Dollar Volume (Decreases on Close/TP/SL)">
                 <span class="b-open-arrow">▲</span>
@@ -324,80 +331,36 @@
                 <span class="chart-status-sub" id="chart-status-sub"></span>
               </div>
             </div>
+
+            <!-- TradingView streaming chart (mounted by tv-chart.js) -->
+            <div id="tv-chart-box" aria-label="TradingView chart">
+              <div class="tv-chart-placeholder">Loading TradingView…</div>
+            </div>
           </div>
 
-          <!-- Right: Authentic SoftradeX Live Traders Order Flow Terminal Sidebar -->
+          <!-- Right: Combined order flow board (Binance · Traders · 12 venues) -->
           <div class="binance-book-sidebar" id="binance-book-sidebar">
-            <div class="traders-terminal-panel" id="traders-terminal-sidebar">
-              <div class="tt-header">
-                <div class="tt-title-wrap">
-                  <span class="tt-pulse-dot"></span>
-                  <span class="tt-title">TRADERS ORDER FLOW TERMINAL</span>
-                  <span class="tt-conn-badge" id="tt-sidebar-market-badge" title="Live Market Order Flow">🔗 LIVE: <b class="tt-connected-symbol" id="tt-sidebar-connected-symbol">PAXGUSDT</b></span>
+            <!-- ================= COMBINED 12-VENUE ORDER FLOW + TRADERS POSITIONS ================= -->
+            <div class="venue-flow-board" id="venue-flow-board" aria-label="Combined order flow: 12 venues, Binance and Traders positions">
+              <div class="vfb-head">
+                <div class="vfb-title">
+                  <span class="vfb-kicker">COMBINED ORDER FLOW</span>
+                  <strong>BINANCE <em>·</em> TRADERS <em>·</em> 12 VENUES</strong>
+                  <span class="vfb-market" id="vfb-market">—</span>
                 </div>
-                <div class="tt-stats-bar">
-                  <div class="tt-stat-chip tt-buy-vol">
-                    <span class="tt-stat-lbl">BUY VOL</span>
-                    <b class="tt-buy-vol-val" id="tt-sidebar-buy-vol-val">50% ($0)</b>
-                  </div>
-                  <div class="tt-stat-chip tt-sell-vol">
-                    <span class="tt-stat-lbl">SELL VOL</span>
-                    <b class="tt-sell-vol-val" id="tt-sidebar-sell-vol-val">50% ($0)</b>
-                  </div>
-                  <div class="tt-stat-chip tt-close-stat">
-                    <span class="tt-stat-lbl">CLOSED</span>
-                    <b class="tt-close-stat-val" id="tt-sidebar-close-stat-val">0 tx ($0)</b>
-                  </div>
-                  <div class="tt-stat-chip tt-speed">
-                    <span class="tt-stat-lbl">SPEED</span>
-                    <b class="tt-speed-val" id="tt-sidebar-speed-val">0.0 tx/s</b>
-                  </div>
+                <div class="vfb-totals">
+                  <div class="vfb-total buy" title="12 venue BUY flow + Binance BUY flow + Traders terminal running open BUY positions"><span>OPEN BUY</span><b id="vfb-buy">$0.00</b><em id="vfb-buy-pct">0%</em></div>
+                  <div class="vfb-total sell" title="12 venue SELL flow + Binance SELL flow + Traders terminal running open SELL positions"><span>OPEN SELL</span><b id="vfb-sell">$0.00</b><em id="vfb-sell-pct">0%</em></div>
                 </div>
               </div>
-
-              <!-- Filter tabs & Volume split meter -->
-              <div class="tt-subbar">
-                <div class="tt-filters">
-                  <button type="button" class="tt-filter-btn active" data-filter="all">ALL</button>
-                  <button type="button" class="tt-filter-btn" data-filter="open">OPEN ⚡</button>
-                  <button type="button" class="tt-filter-btn" data-filter="close">CLOSED ✕</button>
-                  <button type="button" class="tt-filter-btn" data-filter="buy">BUYS</button>
-                  <button type="button" class="tt-filter-btn" data-filter="sell">SELLS</button>
-                  <button type="button" class="tt-filter-btn" data-filter="whale">WHALES 🐋</button>
-                </div>
-                <div class="tt-meter-wrap" title="Buyer vs Seller Volume Split">
-                  <div class="tt-meter-bar">
-                    <div class="tt-meter-buy" style="width: 50%;"></div>
-                    <div class="tt-meter-sell" style="width: 50%;"></div>
-                  </div>
-                </div>
-                <div class="tt-controls">
-                  <button type="button" class="tt-ctrl-btn tt-pause-btn" title="Pause / Resume Live Tape">⏸</button>
-                  <button type="button" class="tt-ctrl-btn tt-clear-btn" title="Clear Tape">🗑</button>
-                </div>
+              <div class="vfb-split"><i class="buy" id="vfb-bar-buy"></i><i class="sell" id="vfb-bar-sell"></i></div>
+              <div class="vfb-source-line">
+                <span>12 VENUES <b id="vfb-venue-buy">$0.00</b> BUY / <b id="vfb-venue-sell">$0.00</b> SELL</span>
+                <span>BINANCE <b id="vfb-binance-buy">$0.00</b> BUY / <b id="vfb-binance-sell">$0.00</b> SELL</span>
+                <span>TRADERS POSITIONS <b id="vfb-pos-buy">$0.00</b> BUY / <b id="vfb-pos-sell">$0.00</b> SELL</span>
               </div>
-
-              <!-- Terminal Columns Header -->
-              <div class="tt-columns-head">
-                <span class="tt-col-time">TIME</span>
-                <span class="tt-col-side">SIDE</span>
-                <span class="tt-col-action">ACTION</span>
-                <span class="tt-col-price">PRICE</span>
-                <span class="tt-col-amount">SIZE</span>
-                <span class="tt-col-total">TOTAL ($)</span>
-                <span class="tt-col-trader">TRADER / ROUTE</span>
-              </div>
-
-              <!-- Live Scrolling Trades Tape -->
-              <div class="tt-tape-body" id="tt-sidebar-tape-body">
-                <!-- Dynamically populated live trades -->
-              </div>
-
-              <!-- Terminal Footer Summary -->
-              <div class="tt-footer">
-                <span class="tt-foot-info"><span class="tt-foot-dot"></span> <span class="tt-status-text" id="tt-sidebar-status-text">Connected to SoftradeX Tape · 0ms latency</span></span>
-                <span class="tt-foot-total tt-foot-net-delta" id="tt-sidebar-net-delta">DELTA: <b class="pos">+$0</b></span>
-              </div>
+              <div class="vfb-list" id="vfb-list"></div>
+              <div class="vfb-foot"><span>12 VENUE 45s FLOW + BINANCE SESSION + TRADERS POSITIONS · READ-ONLY</span><span id="vfb-updated">—</span></div>
             </div>
           </div>
         </div>
@@ -715,6 +678,36 @@
             <header><span class="bof-pulse"></span><strong>BYBIT ORDER FLOW</strong><b id="mof-bybit-status">NO PAIR</b></header>
             <div class="mof-values"><span class="buy">BUY <b id="mof-bybit-buy">$0.00</b><em id="mof-bybit-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-bybit-sell">$0.00</b><em id="mof-bybit-sell-pct">0%</em></span></div>
             <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-bybit-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="kucoin">
+            <header><span class="bof-pulse"></span><strong>KUCOIN ORDER FLOW</strong><b id="mof-kucoin-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-kucoin-buy">$0.00</b><em id="mof-kucoin-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-kucoin-sell">$0.00</b><em id="mof-kucoin-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-kucoin-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="bitfinex">
+            <header><span class="bof-pulse"></span><strong>BITFINEX ORDER FLOW</strong><b id="mof-bitfinex-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-bitfinex-buy">$0.00</b><em id="mof-bitfinex-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-bitfinex-sell">$0.00</b><em id="mof-bitfinex-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-bitfinex-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="mexc">
+            <header><span class="bof-pulse"></span><strong>MEXC ORDER FLOW</strong><b id="mof-mexc-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-mexc-buy">$0.00</b><em id="mof-mexc-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-mexc-sell">$0.00</b><em id="mof-mexc-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-mexc-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="gemini">
+            <header><span class="bof-pulse"></span><strong>GEMINI ORDER FLOW</strong><b id="mof-gemini-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-gemini-buy">$0.00</b><em id="mof-gemini-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-gemini-sell">$0.00</b><em id="mof-gemini-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-gemini-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="deribit">
+            <header><span class="bof-pulse"></span><strong>DERIBIT ORDER FLOW</strong><b id="mof-deribit-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-deribit-buy">$0.00</b><em id="mof-deribit-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-deribit-sell">$0.00</b><em id="mof-deribit-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-deribit-tape"></div>
+          </article>
+          <article class="multi-order-flow-terminal" data-mof="htx">
+            <header><span class="bof-pulse"></span><strong>HTX ORDER FLOW</strong><b id="mof-htx-status">NO PAIR</b></header>
+            <div class="mof-values"><span class="buy">BUY <b id="mof-htx-buy">$0.00</b><em id="mof-htx-buy-pct">0%</em></span><span class="sell">SELL <b id="mof-htx-sell">$0.00</b><em id="mof-htx-sell-pct">0%</em></span></div>
+            <div class="mof-columns"><span>TIME</span><span>SIDE</span><span>PRICE</span><span>QTY</span><span>LIVE OPEN</span></div><div class="mof-tape" id="mof-htx-tape"></div>
           </article>
         </section>
 
@@ -2008,13 +2001,16 @@
 
   <div id="toasts" class="toasts"></div>
 
-  <script src="/static/softradex-terminal.js?v=20261023_news12"></script>
-  <script src="/static/chart-news-events.js?v=20261023_news12"></script>
-  <script src="/static/app.js?v=20261022_dashprev1"></script>
+  <script src="/static/softradex-terminal.js?v=20261029_whales3"></script>
+  <script src="/static/chart-news-events.js?v=20261029_news14"></script>
+  <script src="/static/app.js?v=20261029_cpanel2"></script>
   <script src="/static/traders-terminal.js?v=20261022_globalflow3"></script>
-  <script src="/static/binance-order-flow-terminal.js?v=20261022_v1"></script>
-  <script src="/static/multi-exchange-order-flow.js?v=20261022_v6"></script>
-  <script src="/static/whale-flow.js?v=20261019_v1"></script>
+  <script src="/static/binance-order-flow-terminal.js?v=20261025_open14v1"></script>
+  <script src="/static/multi-exchange-order-flow.js?v=20261025_venues8"></script>
+  <script src="/static/whale-flow.js?v=20261028_cpanel1"></script>
+  <script src="/static/tv-chart.js?v=20261029_tv2"></script>
+  <!-- Whales + news cards drawn inside the TradingView chart -->
+  <script src="/static/chart-overlay.js?v=20261029_whales2"></script>
 </body>
 
 </html>

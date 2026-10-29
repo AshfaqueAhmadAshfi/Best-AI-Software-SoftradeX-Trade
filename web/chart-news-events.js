@@ -17,16 +17,19 @@
 
   const REFRESH_MS = 30000;      // calendar refresh
   const TICK_MS = 15000;         // countdown repaint
-  const HORIZON_SEC = 12 * 3600; // furthest upcoming event drawn
+  const HORIZON_SEC = 12 * 3600;      // furthest event that gets a rail / price mark
+  const LIST_HORIZON_SEC = 72 * 3600; // the side list also shows the next 3 days,
+                                      // so weekends (next release on Monday) are never blank
   const PAST_WINDOW_SEC = 2 * 3600;
   const MAX_FUTURE_ROWS = 4;
 
-  const COLORS = { UP: '#0ECB81', DOWN: '#F6465D', WAIT: '#F0B90B' };
+  const COLORS = { UP: '#059669', DOWN: '#dc2626', WAIT: '#d97706' };
   const IMPACT_ALPHA = { high: 1, medium: 0.72, low: 0.42 };
 
   let events = [];       // normalised rows, sorted by time
   let upcomingCount = 0; // events inside the drawn horizon (drives the lane)
   let fetching = false;
+  let haveSig = '';      // signature of the list this overlay holds (?have=)
 
   function marketKey(v) {
     return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -98,7 +101,7 @@
     const out = [];
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
-      if (e.ts < nowSec - 300 || e.ts > nowSec + HORIZON_SEC) continue;
+      if (e.ts < nowSec - 300 || e.ts > nowSec + LIST_HORIZON_SEC) continue;
       out.push(e);
     }
     if (!out.length) return out;
@@ -121,14 +124,9 @@
   }
 
   function refreshUpcoming() {
-    const nowSec = Date.now() / 1000;
-    upcomingCount = 0;
-    for (let i = 0; i < events.length; i++) {
-      const e = events[i];
-      if (e.ts < nowSec - 300 || e.ts > nowSec + HORIZON_SEC) continue;
-      if (e.impact === 'low') continue;
-      upcomingCount++;
-    }
+    // The lane exists whenever the side list has rows - including the Monday
+    // releases while the market is still closed on Saturday/Sunday.
+    upcomingCount = visibleFuture(Date.now() / 1000).length;
   }
 
   // Width the chart reserves on the right for the upcoming-event lane.
@@ -142,10 +140,19 @@
     if (fetching) return;
     fetching = true;
     try {
-      const res = await fetch('/api/state', { cache: 'no-store' });
+      const res = await fetch('/api/state' + (haveSig ? '?have=' + encodeURIComponent(haveSig) : ''),
+        { cache: 'no-store' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const st = await res.json();
-      const rows = (st && st.bot5 && Array.isArray(st.bot5.news)) ? st.bot5.news : [];
+      const rows = (st && st.bot5 && Array.isArray(st.bot5.news)) ? st.bot5.news : null;
+      // A poll that answers "news_omitted" (the cPanel-safe state feed leaves
+      // out the 1 MB calendar when the browser already holds it) must not be
+      // read as an empty calendar - keep the last list instead.
+      if (!rows) {
+        refreshUpcoming();
+        return;
+      }
+      if (st.bot5 && st.bot5.news_sig) haveSig = st.bot5.news_sig;
       const next = [];
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
@@ -256,6 +263,9 @@
     const tfSec = v.tfSec || 300;
     const nowSec = Date.now() / 1000;
     const future = visibleFuture(nowSec);
+    // Only the next 12h get vertical time rails; a Monday event is listed but
+    // its rail would be meaningless on a 5m chart.
+    const rails = future.filter(e => e.ts - nowSec <= HORIZON_SEC);
     const past = visiblePast(nowSec, v.klines[0].time);
     if (!future.length && !past.length) return;
 
@@ -303,13 +313,13 @@
       const listTop = chartH - listH;
       const x0 = chartW - laneW + 5;
 
-      ctx.fillStyle = 'rgba(8, 12, 18, 0.80)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.90)';
       roundRect(ctx, chartW - laneW - 1, listTop, laneW + 1, listH, 4);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
+      ctx.strokeStyle = 'rgba(37, 99, 235, 0.18)';
       ctx.stroke();
 
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = '#64748b';
       ctx.font = 'bold 8px "JetBrains Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
@@ -321,8 +331,9 @@
       const maxX = chartW - 8;
       const laneStart = chartW - laneW + 8;
       const span = Math.max(20, maxX - laneStart);
-      const horizonMin = Math.max(60, Math.min(720, (rows[rows.length - 1].ts - nowSec) / 60));
-      const placed = rows.map((e) => {
+      const railLast = rails.length ? rails[rails.length - 1].ts : nowSec + 60;
+      const horizonMin = Math.max(60, Math.min(720, (railLast - nowSec) / 60));
+      const placed = rails.map((e) => {
         const dir = directionFor(e, v.symbol);
         const mins = Math.max(0, (e.ts - nowSec) / 60);
         return {
@@ -358,7 +369,7 @@
         ctx.arc(x0 + 4, line1, e.impact === 'high' ? 4.5 : 3.5, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = '#cbd5e1';
+        ctx.fillStyle = '#334155';
         ctx.font = '8px "JetBrains Mono", monospace';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
@@ -370,7 +381,7 @@
         ctx.fillText(dirTxt, x0 + 42, line1);
 
         const mins = (e.ts - nowSec) / 60;
-        ctx.fillStyle = 'rgba(148, 163, 184, 0.9)';
+        ctx.fillStyle = 'rgba(100, 116, 139, 0.95)';
         ctx.font = '7.5px "JetBrains Mono", monospace';
         ctx.textAlign = 'right';
         ctx.fillText('in ' + fmtCountdown(mins), chartW - 5, line1);
@@ -385,7 +396,7 @@
           ctx.fillText(mv, x0, line2);
           titleX = x0 + ctx.measureText(mv).width + 5;
         }
-        ctx.fillStyle = 'rgba(203, 213, 225, 0.78)';
+        ctx.fillStyle = 'rgba(51, 65, 85, 0.85)';
         ctx.font = '7.5px "JetBrains Mono", monospace';
         ctx.textAlign = 'left';
         ctx.fillText(trimToWidth(ctx, e.title, chartW - 5 - titleX), titleX, line2);
@@ -473,7 +484,7 @@
       ctx.globalAlpha = 1;
 
       if (!m.offScale) {
-        ctx.fillStyle = 'rgba(148, 163, 184, 0.92)';
+        ctx.fillStyle = 'rgba(100, 116, 139, 0.95)';
         ctx.font = '7.5px "JetBrains Mono", monospace';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
@@ -515,7 +526,7 @@
       if (tx < 4) tx = Math.max(4, laneStart - tw - 6);
       const ty = Math.max(8, Math.min(chartH - 16, v.priceToY(lastCandle.close) + 14));
 
-      ctx.fillStyle = 'rgba(7, 12, 20, 0.9)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
       roundRect(ctx, tx, ty, tw, 13, 3);
       ctx.fill();
       ctx.strokeStyle = color;

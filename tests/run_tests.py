@@ -1098,13 +1098,14 @@ c3_closed = ebot.close_all("panic")
 check("close_all closes bot3 positions", c3_closed == 1, c3_closed)
 check("close_all stops bot3", ebot.cfg["running"] is False)
 
-print("\n15. unittest suites (news / trend / extreme / pretrade / entry / reversal / sessions / market-ai / chart-feed / mt5-heal)")
+print("\n15. unittest suites (news / trend / extreme / pretrade / entry / reversal / sessions / market-ai / chart-feed / public-feed / order-flow / mt5-heal)")
 import unittest  # noqa: E402
 loader = unittest.TestLoader()
 suite = unittest.TestSuite()
 for mod in ("test_news_bot", "test_trend_bot", "test_extreme_bot", "test_pretrade_bot",
             "test_entry_bot", "test_reversal_bot", "test_sessions", "test_market_ai",
-            "test_chart_feed", "test_mt5_heal"):
+            "test_chart_feed", "test_public_feed", "test_order_flow_feed",
+            "test_mt5_heal"):
     tests_dir = str(ROOT / "tests")
     if tests_dir not in sys.path:
         sys.path.insert(0, tests_dir)

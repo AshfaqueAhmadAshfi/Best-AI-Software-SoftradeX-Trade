@@ -11,6 +11,15 @@ data/*.db-wal
 *.db-shm
 *.db-wal
 
+# Local environment (DOMAIN etc.) - never commit
+.env
+
+# Local runtime settings and fetched market/news data
+config/config.json
+data/*.json
+data/*.pid
+link_check_tmp.py
+
 # Freebuff / IDE / Logs
 .freebuff/
 .idea/

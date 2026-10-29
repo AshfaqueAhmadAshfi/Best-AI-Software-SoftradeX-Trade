@@ -518,6 +518,51 @@ let feedInitialized = false;
 /* -------------------------------------------------------------- websocket */
 let wsReconnectTimer = null;
 
+/* Hosted hosting (cPanel / Passenger) closes every WebSocket upgrade, so a
+   socket that never opens twice in a row means "this host has no WebSockets" -
+   the dashboard then polls the very same snapshot over HTTP. The numbers are
+   identical, only the transport differs. */
+let httpPollTimer = null;
+let wsFailStreak = 0;
+// Signature of the news calendar this tab holds. The cPanel-safe state feed
+// leaves the 1 MB list out of a poll while this matches (?have=), so the state
+// request stays a few KB instead of a megabyte every 2.5 s.
+let newsHaveSig = '';
+
+function startHttpPoll() {
+  if (httpPollTimer) return;
+  const tick = async () => {
+    httpPollTimer = setTimeout(tick, 2500);
+    // bounded: a slowed-down shared host must not queue up poll after poll
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const abort = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, 10000) : null;
+    try {
+      const resp = await fetch('/api/state' + (newsHaveSig ? '?have=' + encodeURIComponent(newsHaveSig) : ''), {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+        signal: ctrl ? ctrl.signal : undefined
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      if (!data) return;
+      lastServerMsgAt = Date.now();
+      queueStateFrame(data);
+      const foot = $('foot-ws');
+      if (foot) { foot.textContent = 'http: live (polling)'; foot.style.color = '#93c5fd'; }
+    } catch (e) {
+      const foot = $('foot-ws');
+      if (foot) { foot.textContent = 'http: retrying…'; foot.style.color = '#fca5a5'; }
+    } finally {
+      if (abort) clearTimeout(abort);
+    }
+  };
+  tick();
+}
+
+function stopHttpPoll() {
+  if (httpPollTimer) { clearTimeout(httpPollTimer); httpPollTimer = null; }
+}
+
 function connectWS() {
   // exactly one live socket: a superseded one must never keep feeding the UI,
   // otherwise every reconnect doubles the live frame rate (dial traffic is ~20/s)
@@ -529,6 +574,8 @@ function connectWS() {
   sock.onopen = () => {
     if (ws !== sock) return;
     wsAlive = true; wsRetry = 0;
+    wsFailStreak = 0;
+    stopHttpPoll();
     lastServerMsgAt = Date.now();
     $('foot-ws').textContent = 'socket: live';
     $('foot-ws').style.color = '#86efac';
@@ -545,8 +592,12 @@ function connectWS() {
   sock.onclose = () => {
     if (ws !== sock) return;   // stale socket - a newer one already took over
     wsAlive = false;
-    $('foot-ws').textContent = 'socket: reconnecting…';
-    $('foot-ws').style.color = '';
+    wsFailStreak += 1;
+    // Two sockets in a row that never opened = a host without WebSocket
+    // support (Passenger on cPanel), not an outage.
+    if (wsFailStreak >= 2) startHttpPoll();
+    $('foot-ws').textContent = httpPollTimer ? 'http: live (polling)' : 'socket: reconnecting…';
+    $('foot-ws').style.color = httpPollTimer ? '#93c5fd' : '';
     scheduleReconnect();
   };
   sock.onerror = () => { try { sock.close(); } catch (e) {} };
@@ -587,7 +638,7 @@ function scheduleReconnect() {
     wsReconnectTimer = null;
     if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
     connectWS();
-  }, Math.min(400 * wsRetry, 4000));
+  }, httpPollTimer ? 20000 : Math.min(400 * wsRetry, 4000));
 }
 
 /* ------------------------------------------------------------ state apply */
@@ -691,6 +742,11 @@ function applyState(data) {
   if (data.bot5 && !Array.isArray(data.bot5.news)
       && prev && prev.bot5 && Array.isArray(prev.bot5.news)) {
     data.bot5.news = prev.bot5.news;
+  }
+  // Remember which list we hold, so the next poll can ask the server to leave
+  // it out of the response.
+  if (data.bot5 && Array.isArray(data.bot5.news) && data.bot5.news_sig) {
+    newsHaveSig = data.bot5.news_sig;
   }
   S = data;
   if (window.TradersTerminal && typeof window.TradersTerminal.onSnapshot === 'function') {
@@ -1302,7 +1358,7 @@ function renderMarketWatches() {
             <span class="machine-led-pulse ${!isOpen ? 'off' : domCls}"></span>
             <span class="machine-label-text">CHRONO-${String(idx + 1).padStart(2, '0')}</span>
           </div>
-          <span class="machine-clock${isLive ? '' : ' sim'}" title="${isLive ? 'Last live reading' : 'Simulated data — MT5 not connected'}">${watchClockText(w.updated_at)}</span>
+          <span class="machine-clock${isLive ? '' : ' sim'}" title="${isLive ? 'Last live reading' : (w.price_source === 'public' ? 'Public feed price — Yahoo / Binance (MT5 not connected)' : 'Simulated data — MT5 not connected')}">${watchClockText(w.updated_at)}</span>
           ${stateBadgeHtml}
         </div>
 
@@ -6053,10 +6109,12 @@ function updateWatchStreamBadge() {
   const txt = $('watch-timer-text');
   if (!badge || !txt || !marketWatches.length) return;
   const anyLive = marketWatches.some((w) => w && w.live !== false);
+  // offline + public prices = real Yahoo / Binance quotes, not the simulator
+  const anyPublic = marketWatches.some((w) => w && w.live === false && w.price_source === 'public');
   const newest = marketWatches.reduce((m, w) => Math.max(m, Number(w.updated_at) || 0), 0);
   badge.classList.add('live');
-  badge.classList.toggle('sim', !anyLive);
-  txt.textContent = `${anyLive ? 'LIVE' : 'SIM'} · ${watchClockText(newest)}`;
+  badge.classList.toggle('sim', !anyLive && !anyPublic);
+  txt.textContent = `${anyLive ? 'LIVE' : (anyPublic ? 'PUBLIC' : 'SIM')} · ${watchClockText(newest)}`;
 }
 
 /* Light live frame pushed on every engine tick: dials, ticker and lightweight price displays only. */
@@ -6222,7 +6280,8 @@ function updateMarketWatchDials() {
     const clockEl = card.querySelector('.machine-clock');
     if (clockEl) {
       clockEl.textContent = clockFor(w.updated_at);
-      clockEl.title = isLive ? 'Last live reading' : 'Simulated data - MT5 not connected';
+      clockEl.title = isLive ? 'Last live reading'
+        : (w.price_source === 'public' ? 'Public feed price - Yahoo / Binance (MT5 not connected)' : 'Simulated data - MT5 not connected');
       clockEl.classList.toggle('sim', !isLive);
     }
 
@@ -6577,11 +6636,11 @@ function drawBotCurve(botKey, sym) {
   const ch = H - pad.top - pad.bottom;
 
   // Background
-  ctx.fillStyle = 'rgba(8, 9, 14, 0.72)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
   ctx.fillRect(0, 0, W, H);
 
   if (points.length < 2) {
-    ctx.fillStyle = '#6c7280';
+    ctx.fillStyle = '#94a3b8';
     ctx.font = '11px "JetBrains Mono", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('Syncing candle flow…', W / 2, H / 2);
@@ -6630,7 +6689,7 @@ function drawBotCurve(botKey, sym) {
   const getY = (p) => pad.top + (1 - (p - plotMin) / priceRange) * ch;
 
   // Grid lines
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+  ctx.strokeStyle = 'rgba(37, 99, 235, 0.10)';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 3; i++) {
     const gy = pad.top + (i / 3) * ch;
@@ -6645,7 +6704,7 @@ function drawBotCurve(botKey, sym) {
     const c = candles[i];
     const cx = getX(i);
     const isBull = c.close >= c.open;
-    const candleColor = isBull ? '#22c55e' : '#ef4444';
+    const candleColor = isBull ? '#059669' : '#dc2626';
     const bodyTop = getY(Math.max(c.open, c.close));
     const bodyBot = getY(Math.min(c.open, c.close));
     const bodyH = Math.max(2, bodyBot - bodyTop);
@@ -6659,22 +6718,22 @@ function drawBotCurve(botKey, sym) {
     ctx.stroke();
 
     // Body
-    ctx.fillStyle = isBull ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+    ctx.fillStyle = isBull ? 'rgba(5, 150, 105, 0.80)' : 'rgba(220, 38, 38, 0.80)';
     ctx.fillRect(cx - candleW / 2, bodyTop, candleW, bodyH);
 
     // Volume bar
     const vH = Math.min(ch * 0.22, (c.volume / maxVol) * (ch * 0.22));
-    ctx.fillStyle = isBull ? 'rgba(34, 197, 94, 0.20)' : 'rgba(239, 68, 68, 0.20)';
+    ctx.fillStyle = isBull ? 'rgba(5, 150, 105, 0.18)' : 'rgba(220, 38, 38, 0.16)';
     ctx.fillRect(cx - candleW / 2, H - pad.bottom - vH, candleW, vH);
   }
 
   // Draw Spline Glow Curve connecting candle closes
   if (candles.length > 1) {
     const isOverallUp = candles[candles.length - 1].close >= candles[0].open;
-    const curveColor = isOverallUp ? '#38bdf8' : '#f59e0b';
+    const curveColor = isOverallUp ? '#2563eb' : '#d97706';
 
     const grad = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
-    grad.addColorStop(0, isOverallUp ? 'rgba(56, 189, 248, 0.18)' : 'rgba(245, 158, 11, 0.18)');
+    grad.addColorStop(0, isOverallUp ? 'rgba(37, 99, 235, 0.16)' : 'rgba(217, 119, 6, 0.14)');
     grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
     ctx.beginPath();
@@ -6708,7 +6767,7 @@ function drawBotCurve(botKey, sym) {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    ctx.strokeStyle = isOverallUp ? 'rgba(56, 189, 248, 0.35)' : 'rgba(245, 158, 11, 0.35)';
+    ctx.strokeStyle = isOverallUp ? 'rgba(37, 99, 235, 0.32)' : 'rgba(217, 119, 6, 0.30)';
     ctx.lineWidth = 4;
     ctx.stroke();
   }
@@ -6721,17 +6780,17 @@ function drawBotCurve(botKey, sym) {
 
   ctx.beginPath();
   ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = '#2563eb';
   ctx.fill();
 
   ctx.beginPath();
   ctx.arc(lastX, lastY, 7, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+  ctx.fillStyle = 'rgba(37, 99, 235, 0.25)';
   ctx.fill();
 
   // Price dashed line
   ctx.setLineDash([3, 3]);
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+  ctx.strokeStyle = 'rgba(37, 99, 235, 0.32)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(pad.left, lastY);
@@ -6746,14 +6805,14 @@ function drawBotCurve(botKey, sym) {
   const lblH = 13;
   const lblX = Math.max(pad.left, W - pad.right - lblW - 2);
   const lblY = Math.max(pad.top, Math.min(H - pad.bottom - lblH, lastY - lblH / 2));
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+  ctx.strokeStyle = 'rgba(37, 99, 235, 0.45)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.roundRect(lblX, lblY, lblW, lblH, 3);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = '#38bdf8';
+  ctx.fillStyle = '#2563eb';
   ctx.textAlign = 'center';
   ctx.fillText(priceLabel, lblX + lblW / 2, lblY + 9.5);
 
@@ -7019,7 +7078,8 @@ function updateMarketTickerTape(watches) {
 function startDisconnectedMicroTicks() {
   if (_microTicksTimer) return;
   _microTicksTimer = setInterval(() => {
-    if (wsAlive && wasConnected) return;
+    // live data from either transport (socket or HTTP polling) beats fake ticks
+    if ((wsAlive || httpPollTimer) && wasConnected) return;
 
     const items = Array.from(_tickerData.values());
     if (!items.length) return;
@@ -7270,7 +7330,7 @@ function init3DTiltEngine() {
   void loadConfig();
   connectWS();
   void loadInitial();
-  setInterval(() => { if (!wsAlive) void loadInitial(); }, 3000);
+  setInterval(() => { if (!wsAlive && !httpPollTimer) void loadInitial(); }, 3000);
   // while logged out, pick up a freshly installed MT5 terminal automatically
   setInterval(() => { if (!wasConnected) void loadConfig(true); }, 15000);
   setInterval(() => { if (wsAlive) { try { ws.send(JSON.stringify({ type: 'ping' })); } catch (e) {} } }, 20000);

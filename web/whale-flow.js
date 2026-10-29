@@ -25,6 +25,7 @@
   var ws = null;
   var wsTimer = null;
   var wsRetry = 0;
+  var wsFails = 0;
   var lastFrameAt = 0;
   var errRetryTimer = null;
   var paused = false;
@@ -259,6 +260,7 @@
     ws = socket;
     socket.onopen = function () {
       wsRetry = 0;
+      wsFails = 0;
       lastFrameAt = Date.now();
       pulse('online');
       if (symbol) socket.send(JSON.stringify({ type: 'sub', symbol: symbol, tf: '1m' }));
@@ -305,6 +307,13 @@
       if (ws === socket) ws = null;
       pulse('');
       if (!symbol) return;
+      wsFails += 1;
+      // Hosted hosting (cPanel / Passenger) has no WebSocket at all: stop
+      // hammering a 404 every few seconds and say so instead of pretending.
+      if (wsFails >= 2) {
+        status('HTTP hosting · live tape needs the WebSocket stream', '');
+        return;
+      }
       wsRetry = Math.min(wsRetry + 1, 8);
       wsTimer = setTimeout(connect, Math.min(500 * wsRetry, 5000));
     };

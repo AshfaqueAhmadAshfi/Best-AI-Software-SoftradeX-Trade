@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import io
 import json
+import os
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -25,6 +27,7 @@ if __package__ in (None, ""):
     from backend.market_watch import get_all_market_watches
     from backend.chart_feed import ChartUnavailable, TF_SEC as CHART_TFS, get_feed
     from backend import bd_feed
+    from backend import order_flow_feed as order_flow
 else:
     from . import config as cfg
     from .engine import Engine
@@ -33,10 +36,12 @@ else:
     from .market_watch import get_all_market_watches
     from .chart_feed import ChartUnavailable, TF_SEC as CHART_TFS, get_feed
     from . import bd_feed
+    from . import order_flow_feed as order_flow
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 if sys.platform == "win32":
     # Prevent Windows ProactorEventLoop ConnectionResetError [WinError 10054] crash on browser tab close/reload
@@ -202,6 +207,16 @@ hub = Hub()
 engine = Engine(store, publisher=hub.publish, watch_publisher=hub.publish_watch,
                 watch_active=lambda: len(hub.clients) > 0)
 
+if cfg.HOSTED:
+    # A WSGI host (cPanel / Passenger) never runs the ASGI lifespan, so the
+    # thread that keeps the snapshot fresh is started right here. engine.start()
+    # is idempotent, so the lifespan path below is still harmless when the app
+    # is served by uvicorn instead.
+    try:
+        engine.start()
+    except Exception:
+        pass
+
 
 def current_account_key() -> str:
     """Login of the account currently on screen ('' when logged out)."""
@@ -235,18 +250,30 @@ app = FastAPI(title=cfg.APP_NAME, version=cfg.VERSION, docs_url="/api/docs",
 @app.middleware("http")
 async def add_no_cache_headers(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path in ("/", "/bd", "/bd.html") or request.url.path.startswith("/static"):
+    if request.url.path.startswith("/static"):
+        # Every asset carries a ?v= version query, so a short cache is safe and
+        # saves cPanel a full re-download of app.js (390 KB) on every view.
+        response.headers["Cache-Control"] = "public, max-age=300"
+        response.headers["Expires"] = ""
+    elif request.url.path in ("/", "/bd", "/bd.html"):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
     return response
 
 
+# Compress everything over 1 KB. A shared cPanel account usually moves a few
+# hundred Kbit/s, and the JSON/JS the dashboard ships is highly compressible:
+# gzip turns the 390 KB app.js into ~90 KB without touching the data.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+
 @app.get("/api/config")
 async def api_config() -> Dict[str, Any]:
     # the lookup can hit a (rate-limited) full drive scan - keep it off the
-    # event loop so the dashboard never stalls while it runs
-    terminals = await asyncio.to_thread(find_terminals)
+    # event loop so the dashboard never stalls while it runs. A hosted
+    # deployment has no terminal at all, so it skips the scan entirely.
+    terminals = [] if cfg.HOSTED else await asyncio.to_thread(find_terminals)
     exness_terminals = [p for p in terminals if "exness" in p.lower()]
     return {
         "app": cfg.APP_NAME,
@@ -258,6 +285,10 @@ async def api_config() -> Dict[str, Any]:
         "mt5_any_terminal": bool(terminals),
         "mt5_exness_branded": bool(exness_terminals),
         "mt5_package": package_available(),
+        "hosted": cfg.HOSTED,
+        # WSGI hosting (cPanel) cannot hold a WebSocket - the browser then polls
+        # /api/state and the chart REST endpoints instead of streaming.
+        "live_stream": not cfg.HOSTED,
         "exness_download": "https://www.exness.com/metatrader-5/",
         "mt5_download": "https://www.metatrader5.com/en/download",
         "remember_login": cfg.CONFIG.get("remember_login", True),
@@ -281,17 +312,62 @@ async def api_ea_token() -> Dict[str, Any]:
     preflight (there is no CORS middleware), so the token cannot be skimmed by
     drive-by scripts the way it could from a plain GET.
     """
-    return {"ea_secret": cfg.CONFIG.get("ea_secret", "")}
+    return {"ea_secret": cfg.CONFIG.get("ea_secret", "")}# ------------------------------------------------------------------ news
+# The economic calendar is ~1 MB of 460 headlines and it used to ride along on
+# every /api/state poll (2.5 s) - on cPanel that is a megabyte every two and a
+# half seconds, which is what made the dashboard crawl. The browser keeps the
+# list it already has (applyState), so a poll only has to say "nothing changed":
+# the request echoes the signature of the list it holds (?have=) and the
+# response then leaves the calendar out. A fresh tab sends nothing, so it
+# always receives the full list first.
+
+
+def _news_sig(bot5: Any) -> str:
+    news = bot5.get("news") if isinstance(bot5, dict) else None
+    if not isinstance(news, list) or not news:
+        return "-"
+    # A calendar sorted by time changes whenever a row is added or expires, so
+    # the count plus the timestamp sequence is enough to notice that - and it
+    # costs ~0.1 ms instead of re-hashing a megabyte of headlines.
+    seq = ",".join(str(r.get("ts", "")) for r in news)
+    return hashlib.md5((str(len(news)) + ":" + seq).encode("utf-8")).hexdigest()[:16]
 
 
 @app.get("/api/state")
-async def api_state() -> Dict[str, Any]:
+async def api_state(request: Request) -> JSONResponse:
     snap = engine.snapshot()
     if not snap:
-        # engine has not produced a snapshot yet
-        await asyncio.sleep(0.25)
-        snap = engine.snapshot()
-    return snap
+        # The engine has not produced its first snapshot yet. On a cold start
+        # (Passenger waking a shared-hosting process, first request after an
+        # idle unload) that can take a few seconds, and an empty reply would
+        # make the browser paint the login page first. Wait for it in short
+        # steps instead, but never longer than ~8 s.
+        deadline = time.time() + 8.0
+        while time.time() < deadline:
+            await asyncio.sleep(0.15)
+            snap = engine.snapshot()
+            if snap:
+                break
+    if not snap:
+        return JSONResponse(content=snap)
+
+    b5 = snap.get("bot5")
+    sig = _news_sig(b5)
+    have = (request.query_params.get("have") or "").strip()
+    body = dict(snap)
+    if isinstance(b5, dict):
+        out_b5 = dict(b5)
+        if sig != "-":
+            out_b5["news_sig"] = sig
+        if have and have == sig:
+            # This tab already holds this exact list - leave the megabyte out.
+            out_b5.pop("news", None)
+            out_b5["news_omitted"] = True
+        body["bot5"] = out_b5
+
+    resp = JSONResponse(content=body)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.get("/api/terminals")
@@ -430,7 +506,7 @@ async def api_events(limit: int = 60) -> Dict[str, Any]:
 
 
 # ------------------------------------------------------------- auto trading
-BOT_TRADING_ENABLED = bool(cfg.CONFIG.get("bots_enabled", False))
+BOT_TRADING_ENABLED = bool(cfg.CONFIG.get("bots_enabled", False)) and not cfg.HOSTED
 
 
 def bot_disabled_response() -> JSONResponse:
@@ -893,6 +969,24 @@ async def api_chart_tape(symbol: str = Query(...), limit: int = Query(40, ge=1, 
             "recent": chart_feed.recent_prints(symbol, limit)}
 
 
+# ------------------------------------------- additional order-flow venues
+# The browser reads the major crypto venues directly. These six publish a
+# keyless trade API without CORS headers, so a small read-only proxy normalises
+# their public tapes. No order is ever placed here.
+@app.get("/api/orderflow/venues")
+async def api_orderflow_venues() -> Dict[str, Any]:
+    return {"venues": order_flow.catalogue()}
+
+
+@app.get("/api/orderflow/trades")
+async def api_orderflow_trades(venue: str = Query(...), market: str = Query("BTC"),
+                               limit: int = Query(80, ge=10, le=200)) -> Dict[str, Any]:
+    try:
+        return await asyncio.to_thread(order_flow.trades, venue, market, limit)
+    except order_flow.OrderFlowUnavailable as exc:
+        raise HTTPException(503, str(exc))
+
+
 @app.websocket("/ws/chart")
 async def ws_chart(ws: WebSocket) -> None:
     await ws.accept()
@@ -1013,6 +1107,7 @@ async def api_health() -> Dict[str, Any]:
     snap = engine.snapshot()
     return {
         "ok": True,
+        "hosted": cfg.HOSTED,
         "connected": bool(snap.get("connected")),
         "source": snap.get("source"),
         "clients": len(hub.clients),
@@ -1070,14 +1165,22 @@ async def logo_file() -> FileResponse:
 def main() -> None:
     import uvicorn
 
-    host = cfg.CONFIG.get("host", "127.0.0.1")
-    port = int(cfg.CONFIG.get("port", 8777))
+    # Hosting platforms inject PORT (and expect the app on 0.0.0.0); the desktop
+    # launcher keeps the loopback default from config.json.
+    env_port = os.environ.get("PORT", "").strip()
+    host = (os.environ.get("HOST", "").strip()
+            or ("0.0.0.0" if env_port else "")
+            or str(cfg.CONFIG.get("host", "127.0.0.1")))
+    port = int(env_port or cfg.CONFIG.get("port", 8777))
+    shown = "127.0.0.1" if host in ("0.0.0.0", "::") else host
     print(f"\n  {cfg.APP_NAME} v{cfg.VERSION}")
-    print(f"  Dashboard : http://{host}:{port}/")
-    print(f"  API docs  : http://{host}:{port}/api/docs")
-    print(f"  EA bridge : http://{host}:{port}/api/ea/event")
-    print(f"  EA token  : {cfg.CONFIG.get('ea_secret', '')}\n")
-    uvicorn.run(app, host=host, port=port, log_level="warning", ws_ping_interval=None, ws_ping_timeout=None)
+    print(f"  Dashboard : http://{shown}:{port}/")
+    print(f"  API docs  : http://{shown}:{port}/api/docs")
+    print(f"  EA bridge : http://{shown}:{port}/api/ea/event")
+    secret = str(cfg.CONFIG.get("ea_secret", ""))
+    print(f"  EA token  : {(secret[:4] + '...' + secret[-4:]) if len(secret) > 10 else '(see config/config.json)'}\n", flush=True)
+    uvicorn.run(app, host=host, port=port, log_level="warning", ws_ping_interval=None,
+                ws_ping_timeout=None, proxy_headers=True, forwarded_allow_ips="*")
 
 
 if __name__ == "__main__":

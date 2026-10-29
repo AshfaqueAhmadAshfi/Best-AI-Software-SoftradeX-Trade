@@ -77,16 +77,33 @@
     const otherExchanges = window.MultiExchangeOrderFlow &&
       typeof window.MultiExchangeOrderFlow.getTotals === 'function'
       ? window.MultiExchangeOrderFlow.getTotals() : { buy: 0, sell: 0 };
-    const breakdown = window.MultiExchangeOrderFlow &&
-      typeof window.MultiExchangeOrderFlow.getBreakdown === 'function'
-      ? window.MultiExchangeOrderFlow.getBreakdown() : [];
+    const combined = window.MultiExchangeOrderFlow &&
+      typeof window.MultiExchangeOrderFlow.getOpenTotals === 'function'
+      ? window.MultiExchangeOrderFlow.getOpenTotals() : null;
+    const breakdown = combined && combined.breakdown
+      ? combined.breakdown
+      : (window.MultiExchangeOrderFlow &&
+         typeof window.MultiExchangeOrderFlow.getBreakdown === 'function'
+        ? window.MultiExchangeOrderFlow.getBreakdown() : []);
+    const venueBuy = combined ? Number(combined.venueBuy) || 0
+      : (Number(otherExchanges.buy) || 0);
+    const venueSell = combined ? Number(combined.venueSell) || 0
+      : (Number(otherExchanges.sell) || 0);
+    const finalTradersBuy = combined ? Number(combined.tradersBuy) || 0 : tradersBuy;
+    const finalTradersSell = combined ? Number(combined.tradersSell) || 0 : tradersSell;
+    const binanceBuy = Number(state.buy) || 0;
+    const binanceSell = Number(state.sell) || 0;
     return {
-      buy: state.buy + tradersBuy + (Number(otherExchanges.buy) || 0),
-      sell: state.sell + tradersSell + (Number(otherExchanges.sell) || 0),
-      binanceBuy: state.buy,
-      binanceSell: state.sell,
-      tradersBuy,
-      tradersSell,
+      // The top chips represent every source once: 12 public venue tapes,
+      // Binance's own tape, and the Traders terminal's running open positions.
+      buy: combined ? Number(combined.buy) || 0 : venueBuy + binanceBuy + finalTradersBuy,
+      sell: combined ? Number(combined.sell) || 0 : venueSell + binanceSell + finalTradersSell,
+      venueBuy,
+      venueSell,
+      binanceBuy: combined ? Number(combined.binanceBuy) || 0 : binanceBuy,
+      binanceSell: combined ? Number(combined.binanceSell) || 0 : binanceSell,
+      tradersBuy: finalTradersBuy,
+      tradersSell: finalTradersSell,
       breakdown,
       buyCount: state.buyCount,
       sellCount: state.sellCount
@@ -94,18 +111,21 @@
   }
 
   // One line per source so the chip total can be read back to every terminal
-  // on the page: Binance, Traders and the six exchange tapes.
+  // on the page: the 12 venues, Binance, then the Traders open positions.
   function sourceLines(totals, side) {
     const lines = [
-      `Binance ${compact(totals['binance' + side])} + Traders ${compact(totals['traders' + side])}`
+      `12 VENUES ${side.toUpperCase()}: ${compact(totals['venue' + side])}`,
+      `BINANCE ${side.toUpperCase()}: ${compact(totals['binance' + side])}`,
+      `TRADERS POSITIONS ${side.toUpperCase()}: ${compact(totals['traders' + side])}`
     ];
     const key = side === 'Buy' ? 'buy' : 'sell';
-    const breakdown = totals.breakdown || [];
-    for (let i = 0; i < breakdown.length; i += 3) {
-      lines.push(breakdown.slice(i, i + 3)
+    const venues = (totals.breakdown || []).filter(entry => !entry.extra);
+    for (let i = 0; i < venues.length; i += 3) {
+      lines.push(venues.slice(i, i + 3)
         .map(entry => `${entry.name} ${compact(entry[key])}`)
         .join(' + '));
     }
+    lines.push(`TOTAL ${side.toUpperCase()} OPEN: ${compact(totals[side === 'Buy' ? 'buy' : 'sell'])}`);
     return lines.join('\n');
   }
 
@@ -118,11 +138,11 @@
     const buyChip = $('b-open-buy-chip');
     const sellChip = $('b-open-sell-chip');
     if (sellChip) {
-      sellChip.title = `Combined ${selectedPair.toUpperCase()} SELL OPEN: ${sell}\n` +
+      sellChip.title = `COMBINED ${selectedPair.toUpperCase()} SELL OPEN (12 venues + Binance + positions): ${sell}\n` +
         sourceLines(totals, 'Sell');
     }
     if (buyChip) {
-      buyChip.title = `Combined ${selectedPair.toUpperCase()} BUY OPEN: ${buy}\n` +
+      buyChip.title = `COMBINED ${selectedPair.toUpperCase()} BUY OPEN (12 venues + Binance + positions): ${buy}\n` +
         sourceLines(totals, 'Buy');
     }
   }

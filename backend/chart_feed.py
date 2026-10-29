@@ -29,6 +29,7 @@ except Exception:  # pragma: no cover
     mt5 = None  # type: ignore
 
 from .mt5_client import IPC_LOCK, preferred_terminal_path
+from . import public_feed
 
 try:  # pragma: no cover - keeps the Exness dashboard intact if the BD module is absent
     from .bd_feed import is_bd_symbol
@@ -344,6 +345,12 @@ def _try_ensure_terminal() -> bool:
     global _attach_checked_at, _attach_checked_for, _last_init_attempt, _last_init_for
     if mt5 is None:
         return False
+    # A hosted deployment (cPanel / Docker) has no terminal to attach to and
+    # mt5.initialize() can block for seconds, so never attempt it there: the
+    # chart is served straight from the public feeds.
+    from . import config as _cfg
+    if _cfg.HOSTED:
+        return False
     now = time.monotonic()
     if (_attach_checked_for is mt5
             and (now - _attach_checked_at) < _ATTACH_TTL):
@@ -643,9 +650,16 @@ def tape_from_bars(bars: List[List[float]], point: float, digits: int,
 
 
 class ChartFeed:
-    """Owns the MT5 market-data cache, the sampler thread and the WS fan-out."""
+    """Owns the MT5 market-data cache, the sampler thread and the WS fan-out.
 
-    def __init__(self) -> None:
+    ``public_fallback`` keeps the chart alive with real Binance / Yahoo data
+    when no MT5 terminal is logged in. It is off by default so unit tests (and
+    any caller that insists on MT5-only data) keep the strict behaviour; the
+    dashboard's ``get_feed()`` turns it on.
+    """
+
+    def __init__(self, public_fallback: bool = False) -> None:
+        self.public_fallback = bool(public_fallback)
         self._lock = threading.RLock()
         self._clients: Dict[int, Dict[str, Any]] = {}
         self._subs: Dict[str, int] = {}
@@ -710,11 +724,30 @@ class ChartFeed:
             if info is not None:
                 rows.append(_meta_from_info(resolved_sym, spec, info))
 
+        source = "mt5" if rows else "none"
+        if not rows and self.public_fallback:
+            # No terminal (or nothing tradable on it): offer the same catalogue
+            # through the public feeds so the chart still opens.
+            rows = []
+            for spec in CATALOG:
+                if not public_feed.supports(spec["symbol"]):
+                    continue
+                meta = _meta_from_spec_default(spec, spec["symbol"])
+                # The browser appends the active feed label to this description.
+                meta["description"] = "%s / %s" % (
+                    spec.get("label", spec["symbol"]), spec.get("pair", "USD"))
+                meta["source"] = "public"
+                rows.append(meta)
+            source = "public" if rows else "none"
+
         payload = {
-            "available": bool(mt5_live and rows),
+            "available": bool(rows),
             "connected": bool(mt5_live),
-            "message": ("Exness MT5 Live" if rows else
-                        "Connect and log in to an Exness MetaTrader 5 terminal"),
+            "source": source,
+            "message": ("Exness MT5 Live" if source == "mt5" else
+                        ("Public market feed (Binance + Yahoo) · MT5 terminal not connected"
+                         if source == "public" else
+                         "Connect and log in to an Exness MetaTrader 5 terminal")),
             "symbols": rows,
             "count": len(rows),
             "account": {
@@ -751,14 +784,33 @@ class ChartFeed:
             meta = _meta_from_info(symbol, spec, info)
         else:
             meta = _meta_from_spec_default(spec, symbol)
+            if self.public_fallback and public_feed.supports(spec["symbol"]):
+                meta["description"] = "%s / %s" % (
+                    spec.get("label", spec["symbol"]), spec.get("pair", "USD"))
+                meta["source"] = "public"
         self._meta_cache[symbol] = (now, meta)
         return meta
 
     # --------------------------------------------------------------- data
+    def _public_candles(self, symbol: str, tf: str, count: int) -> List[List[float]]:
+        try:
+            bars = public_feed.candles(symbol, tf, count)
+        except public_feed.PublicFeedError as exc:
+            raise ChartUnavailable(str(exc)) from exc
+        except Exception as exc:  # pragma: no cover - unexpected provider failure
+            raise ChartUnavailable("public feed error: %s" % exc) from exc
+        if not bars:
+            raise ChartUnavailable("No candles are available for %s" % symbol)
+        return bars
+
     def _read_rates(self, symbol: str, tf: str, count: int) -> List[List[float]]:
         if is_bd_symbol(symbol) and _bd_candles is not None:
             return _bd_candles(symbol, tf, count)
+        canon = public_feed.canonical(symbol)
+        public_ok = bool(self.public_fallback and public_feed.supports(canon))
         if not _try_ensure_terminal():
+            if public_ok:
+                return self._public_candles(canon, tf, count)
             raise ChartUnavailable("Exness MetaTrader 5 terminal is not connected")
         const = _tf_const(tf)
         try:
@@ -766,8 +818,12 @@ class ChartFeed:
                 rates = mt5.copy_rates_from_pos(symbol, const, 0, int(count))
             bars = _bars_from_rates(rates)
         except Exception as exc:
+            if public_ok:
+                return self._public_candles(canon, tf, count)
             raise ChartUnavailable("Exness MT5 could not return candle data") from exc
         if not bars:
+            if public_ok:
+                return self._public_candles(canon, tf, count)
             raise ChartUnavailable("No candles are available for %s in Exness MT5" % symbol)
         return bars
 
@@ -802,6 +858,16 @@ class ChartFeed:
                     return tick
             except Exception:
                 pass
+        if self.public_fallback:
+            canon = public_feed.canonical(symbol)
+            if public_feed.supports(canon):
+                try:
+                    tick = public_feed.tick(canon)
+                except Exception:
+                    tick = None
+                if tick:
+                    self._tick_cache[symbol] = (now, tick)
+                    return tick
         if is_bd_symbol(symbol):
             return None
         raise ChartUnavailable("Exness MetaTrader 5 has no live tick for %s" % symbol)
@@ -812,6 +878,30 @@ class ChartFeed:
         if hit and now - hit[0] < 5.0:
             return hit[1]
         meta = self.meta(symbol)
+        canon = public_feed.canonical(symbol)
+        if self.public_fallback and public_feed.supports(canon) and not _try_ensure_terminal():
+            try:
+                raw = public_feed.ticker(canon)
+            except Exception:
+                raw = None
+            if raw:
+                digits = int(meta["digits"])
+                payload = {
+                    "symbol": symbol,
+                    "price": _round_price(raw["price"], digits),
+                    "open24": _round_price(raw["open24"], digits),
+                    "change": round(float(raw["change"]), 2),
+                    "high": _round_price(raw["high"], digits),
+                    "low": _round_price(raw["low"], digits),
+                    "vol": int(raw["vol"]),
+                    "digits": digits,
+                    "unit": meta["unit"],
+                    "currency": meta["currency"],
+                    "updated_at": int(now * 1000),
+                    "source": "public",
+                }
+                self._ticker_cache[symbol] = (now, payload)
+                return payload
         tick = self.tick(symbol, max_age=0.2)
         rates = self._read_rates(symbol, "1m", 1440)
         high = max(float(b[2]) for b in rates)
@@ -901,6 +991,14 @@ class ChartFeed:
                 return _bd_m1_volume(symbol)
             except Exception:
                 return 0, 0
+        if not _try_ensure_terminal():
+            canon = public_feed.canonical(symbol)
+            if self.public_fallback and public_feed.supports(canon):
+                try:
+                    return public_feed.m1_volume(canon)
+                except Exception:
+                    return 0, 0
+            return 0, 0
         _ensure_terminal()
         with IPC_LOCK:
             rates = mt5.copy_rates_from_pos(symbol, _tf_const("1m"), 0, 2)
@@ -1174,5 +1272,5 @@ def get_feed() -> ChartFeed:
     global _FEED
     with _FEED_LOCK:
         if _FEED is None:
-            _FEED = ChartFeed()
+            _FEED = ChartFeed(public_fallback=True)
         return _FEED

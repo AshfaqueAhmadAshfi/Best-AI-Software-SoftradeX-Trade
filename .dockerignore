@@ -1,0 +1,23 @@
+# never ship local state, history or tooling into the image
+.git
+.gitignore
+.freebuff
+.idea
+.vscode
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# personal trading state / caches are created inside the container instead
+data
+config/config.json
+
+# local-only helpers
+docs
+tests
+tools
+ea
+*.log
+*.bat
+*.zip
+.env
