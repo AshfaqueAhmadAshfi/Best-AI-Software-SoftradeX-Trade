@@ -184,7 +184,11 @@ class Engine:
         self._last_publish_ts = 0.0
         self._last_signature: tuple = ()
         self.latency_ms = 0.0
-        self.poll_interval = max(cfg.CONFIG.get("poll_interval_ms", 400) / 1000.0, 0.1)
+        configured_poll = max(cfg.CONFIG.get("poll_interval_ms", 400) / 1000.0, 0.1)
+        # Passenger/cPanel has a shared CPU budget and the browser already
+        # polls hosted snapshots every 2.5 seconds. Avoid recomputing every
+        # public market watch on a 400 ms desktop cadence in hosted mode.
+        self.poll_interval = max(configured_poll, 2.5) if cfg.HOSTED else configured_poll
         self.history_interval = max(cfg.CONFIG.get("history_interval_ms", 2000) / 1000.0, 0.5)
         self.history_days = int(cfg.CONFIG.get("history_days", 60))
 
