@@ -1,0 +1,883 @@
+/* ============================================================================
+   styles-glass-v2.css — GLASSMORPHISM · COMPLETE COVERAGE PASS
+   Loaded LAST on index.html (after styles-glass.css) so it wins the cascade.
+
+   styles-glass.css covered ~324 of the 509 classes used by index.html.
+   This file closes the remaining gap so every surface on the page is glass:
+
+     1. tokens + canvas refinement
+     2. universal glass surfaces (panels / sections / cards)
+     3. the 185 previously unstyled classes, grouped by feature
+     4. controls: inputs, selects, chips, tabs, toggles, buttons
+     5. overlays: modals, drawers, toasts, scrims
+     6. micro-polish: gradient hairlines, hovers, focus rings, scrollbars
+
+   Rules of this layer:
+     · frosted white glass over a soft blue canvas, one blue accent
+     · green/red reserved for buy/sell + win/loss semantics only
+     · visuals only — no layout structure, no IDs or JS contract touched
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- 1. tokens */
+:root {
+  --glass-border: 1px solid rgba(255, 255, 255, 0.92);
+  --glass-edge-ring: inset 0 0 0 1px rgba(37, 99, 235, 0.07);
+  --glass-inner-hi: inset 0 1px 0 rgba(255, 255, 255, 1);
+
+  --glass-blur-sm: blur(12px) saturate(160%);
+  --glass-blur-md: blur(18px) saturate(175%);
+  --glass-blur-lg: blur(26px) saturate(190%);
+
+  --glass-tint: rgba(255, 255, 255, 0.58);
+  --glass-tint-soft: rgba(255, 255, 255, 0.44);
+  --glass-tint-strong: rgba(255, 255, 255, 0.86);
+
+  --hairline: rgba(37, 99, 235, 0.14);
+  --hairline-soft: rgba(37, 99, 235, 0.08);
+  --hairline-bright: rgba(37, 99, 235, 0.30);
+
+  --ink: #0f172a;
+  --ink-dim: #475569;
+  --ink-faint: #7b8aa3;
+
+  --accent-ink: #1d4ed8;
+  --accent-wash: rgba(37, 99, 235, 0.08);
+  --accent-wash-2: rgba(37, 99, 235, 0.14);
+
+  --lift-1: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 10px 24px -18px rgba(30, 64, 175, 0.45);
+  --lift-2: 0 1px 0 rgba(255, 255, 255, 1) inset, 0 20px 44px -28px rgba(30, 64, 175, 0.55);
+  --lift-3: 0 1px 0 rgba(255, 255, 255, 1) inset, 0 34px 64px -40px rgba(30, 64, 175, 0.65);
+}
+
+/* softer, more luminous canvas — keeps text contrast on white glass */
+body {
+  background-image:
+    radial-gradient(1180px 760px at 6% -14%, rgba(59, 130, 246, 0.34), transparent 62%),
+    radial-gradient(980px 660px at 98% -2%, rgba(56, 189, 248, 0.30), transparent 60%),
+    radial-gradient(880px 660px at 88% 98%, rgba(167, 139, 250, 0.24), transparent 62%),
+    radial-gradient(820px 600px at 8% 92%, rgba(251, 191, 36, 0.20), transparent 64%),
+    radial-gradient(1200px 900px at 50% 46%, rgba(255, 255, 255, 0.55), transparent 70%),
+    linear-gradient(180deg, #f8fbff 0%, #eaf1ff 52%, #e4ecfe 100%) !important;
+}
+
+/* glass panels need dark ink to stay readable on the white frost */
+#app { color: var(--ink); }
+#dash h1, #dash h2, #dash h3, #dash h4, #dash h5, #dash strong,
+#connect-view h1, #connect-view h2, #connect-view h3,
+.modal-card h1, .modal-card h2, .modal-card h3 { color: #0f172a !important; }
+
+/* ------------------------------------------------- 2. universal glass surfaces
+   One surface recipe, applied by semantic role instead of per-class, so newly
+   added markup inherits the look without another stylesheet edit. */
+#dash .panel,
+#dash .feed-panel,
+#dash .all-economic-news-panel,
+#dash .all-news-feed,
+#dash .watch-grid,
+#dash .panel-foot,
+#dash .pricemap-rows,
+#dash .planned-trades-list,
+#dash .struct-badges-grid,
+#dash .sessions-radar-panel,
+#dash .bot-panel,
+#dash .bot-settings,
+#dash .bot-settings-4,
+#dash .bot-market-head,
+#dash .bot2-trend-box,
+#dash .trend-box-details,
+#dash .trend-box-footer,
+#dash .trend-box-head,
+#dash .feed-panel-drawer,
+#dash .binance-terminal-section,
+#dash .bd-access-card {
+  background: var(--glass-card-bg) !important;
+  -webkit-backdrop-filter: var(--glass-blur-md) !important;
+  backdrop-filter: var(--glass-blur-md) !important;
+  border: var(--glass-border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--lift-2) !important;
+  box-shadow: var(--lift-2), var(--glass-edge-ring) !important;
+  outline: none !important;
+  position: relative;
+}
+
+/* nested cards sit on the parent frost — lighter, no second blur layer,
+   otherwise a page of 12 terminals costs 12 full-screen blur passes */
+#dash .bot-panel .bot-settings,
+#dash .bot-panel .bot-settings-4,
+#dash .bot-panel .bot2-trend-box,
+#dash .bot-panel .bot-market-head,
+#dash .all-economic-news-panel .all-news-feed,
+#dash .all-economic-news-panel .all-news-body,
+#dash .watch-grid .watch-card,
+#dash .panel .panel-foot,
+#dash .pricemap-head,
+#dash .radar-box-head {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.52)) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.88) !important;
+  box-shadow: var(--lift-1) !important;
+}
+
+/* top hairline gradient on every glass panel — the signature glass edge */
+#dash .panel::after,
+#dash .feed-panel::after,
+#dash .watch-grid::after,
+#dash .binance-terminal-section::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.30), rgba(56, 189, 248, 0.22), transparent);
+  pointer-events: none;
+}
+
+/* ----------------------------------------- 3. previously unstyled class clusters */
+
+/* ---- 3.1 connect / login ------------------------------------------------ */
+#connect-view.connect-wrap {
+  background:
+    radial-gradient(760px 480px at 50% -10%, rgba(59, 130, 246, 0.16), transparent 66%),
+    transparent !important;
+}
+#connect-view .connect-card {
+  background: var(--glass-card-bg) !important;
+  -webkit-backdrop-filter: var(--glass-blur-lg) !important;
+  backdrop-filter: var(--glass-blur-lg) !important;
+  border: var(--glass-border) !important;
+  border-radius: 26px !important;
+  box-shadow: var(--lift-3), inset 0 1px 0 #fff !important;
+  padding: 30px 30px 34px !important;
+}
+#connect-view .connect-brand-header { display: grid; place-items: center; margin-bottom: 6px; }
+#connect-view .login-logo {
+  border-radius: 20px !important;
+  box-shadow: 0 18px 38px -22px rgba(30, 64, 175, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.9) inset !important;
+  background: rgba(255, 255, 255, 0.6) !important;
+}
+#connect-view .connect-actions {
+  background: transparent !important;
+  border: none !important;
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+#connect-view .login-ticker-viewport,
+#connect-view .login-market-strip {
+  background: rgba(255, 255, 255, 0.66) !important;
+  -webkit-backdrop-filter: var(--glass-blur-sm) !important;
+  backdrop-filter: var(--glass-blur-sm) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--lift-1) !important;
+}
+#connect-view .exness-search-wrap,
+#connect-view .exness-market-search,
+#connect-view .exness-market-controls {
+  background: rgba(255, 255, 255, 0.72) !important;
+  border: 1px solid rgba(37, 99, 235, 0.14) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--glass-inner-hi) !important;
+}
+
+/* ---- 3.2 market ticker track ------------------------------------------- */
+.market-ticker-bar .ticker-track-container {
+  background: transparent !important;
+  border: none !important;
+  mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+}
+.market-ticker-bar .ticker-track { background: transparent !important; }
+
+/* ---- 3.3 flow rails ---------------------------------------------------- */
+
+#dash .flow-rail-left,
+#dash .flow-rail-right,
+#dash .flow-rail-act,
+#dash .flow-rail-bots,
+#dash .flow-rail-hist,
+#dash .flow-rail-pos {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.80), rgba(255, 255, 255, 0.50)) !important;
+  -webkit-backdrop-filter: var(--glass-blur-sm) !important;
+  backdrop-filter: var(--glass-blur-sm) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--lift-1) !important;
+  color: var(--ink-dim) !important;
+}
+#dash .flow-rail-left:hover,
+#dash .flow-rail-right:hover,
+#dash .flow-rail-act:hover,
+#dash .flow-rail-bots:hover,
+#dash .flow-rail-hist:hover,
+#dash .flow-rail-pos:hover {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border-color: var(--hairline-bright) !important;
+  color: var(--accent-ink) !important;
+  box-shadow: 0 14px 30px -20px rgba(37, 99, 235, 0.75) !important;
+}
+#dash .rail-txt { color: inherit !important; letter-spacing: 0.02em; }
+
+/* ---- 3.4 account strip extras ------------------------------------------ */
+#dash .head-right,
+#dash .sessions-head-right,
+#dash .watch-head-right,
+#dash .all-news-head-right,
+#dash .ai-head-right,
+#dash .feed-head-actions,
+#dash .planned-head-actions,
+#dash .drawer-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+#dash .sessions-head-left,
+#dash .feed-head-left,
+#dash .planned-head-title-wrap,
+#dash .sessions-radar-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* ---- 3.5 AI board ------------------------------------------------------ */
+#dash .ai-grid {
+  background: transparent !important;
+  border: none !important;
+  display: grid;
+  gap: 10px;
+}
+#dash .ai-pick,
+#dash .ai-targets {
+  background: rgba(255, 255, 255, 0.62) !important;
+  -webkit-backdrop-filter: var(--glass-blur-sm) !important;
+  backdrop-filter: var(--glass-blur-sm) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--lift-1) !important;
+  padding: 10px 12px !important;
+}
+
+/* ---- 3.6 news feed ----------------------------------------------------- */
+#dash .all-news-sources-bar,
+#dash .news-sources,
+#dash .news-impact-filter-bar,
+#dash .news-impact-all-bar,
+#dash .sessions-radar-chips,
+#dash .sessions-radar-counts {
+  background: rgba(255, 255, 255, 0.60) !important;
+  -webkit-backdrop-filter: var(--glass-blur-sm) !important;
+  backdrop-filter: var(--glass-blur-sm) !important;
+  border: 1px solid rgba(255, 255, 255, 0.88) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--lift-1) !important;
+  padding: 6px 8px !important;
+}
+#dash .all-news-body { background: transparent !important; border: none !important; }
+#dash .all-market-tag,
+#dash .imp-filter-all,
+#dash .impact-dot {
+  background: var(--accent-wash) !important;
+  color: var(--accent-ink) !important;
+  border: 1px solid rgba(37, 99, 235, 0.18) !important;
+  border-radius: 999px !important;
+}
+
+/* ---- 3.7 sessions radar ------------------------------------------------- */
+#dash .sessions-radar-head,
+#dash .radar-box-head {
+  background: transparent !important;
+  border-bottom: 1px solid var(--hairline-soft) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+#dash .sessions-radar-icon,
+#dash .radar-timer-pill {
+  background: var(--accent-wash) !important;
+  border: 1px solid rgba(37, 99, 235, 0.18) !important;
+  border-radius: 10px !important;
+  color: var(--accent-ink) !important;
+}
+#dash .sessions-loading { color: var(--ink-faint) !important; background: transparent !important; }
+
+/* ---- 3.8 bot panels: settings / trend / planned trades ------------------ */
+#dash .bot-actions,
+#dash .bot-chips-side,
+#dash .bot-field,
+#dash .field,
+#dash .inp,
+#dash .filters,
+#dash .modal-actions,
+#dash .tt-controls {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+#dash .bot-field,
+#dash .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+}
+#dash .bot-field label,
+#dash .field label { color: var(--ink-faint) !important; font-size: 11px; letter-spacing: 0.04em; }
+
+#dash .bot2-trend-box,
+#dash .trend-box-head,
+#dash .trend-box-details,
+#dash .trend-box-footer {
+  border-radius: 14px !important;
+}
+#dash .trend-box-title,
+#dash .planned-head-title-wrap { color: var(--ink) !important; }
+
+#dash .trend-bar-track {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-radius: 999px !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.10) !important;
+  overflow: hidden;
+}
+#dash .trend-bar-fill {
+  background: linear-gradient(90deg, #3b82f6, #22d3ee) !important;
+  border-radius: 999px !important;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.5) !important;
+  transition: width 0.45s ease;
+}
+#dash .trend-badge,
+#dash .trend-tag,
+#dash .trend-box-timer {
+  background: var(--accent-wash) !important;
+  color: var(--accent-ink) !important;
+  border: 1px solid rgba(37, 99, 235, 0.20) !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+#dash .trend-deactive-text { color: var(--ink-faint) !important; }
+#dash .trend-radar-wrap {
+  background: rgba(255, 255, 255, 0.55) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--lift-1) !important;
+}
+#dash .trend-radar-dot { background: #10b981 !important; box-shadow: 0 0 10px rgba(16, 185, 129, 0.85) !important; }
+#dash .trend-radar-wave { border-color: rgba(16, 185, 129, 0.55) !important; }
+
+#dash .struct-card-top,
+#dash .struct-tf-toggle,
+#dash .struct-badges-grid { background: transparent !important; border: none !important; box-shadow: none !important; }
+#dash .struct-tf-toggle {
+  background: rgba(255, 255, 255, 0.66) !important;
+  border: 1px solid rgba(37, 99, 235, 0.14) !important;
+  border-radius: 10px !important;
+}
+
+#dash .pricemap-head {
+  background: transparent !important;
+  border-bottom: 1px solid var(--hairline-soft) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+#dash .pricemap-title { color: var(--ink-dim) !important; letter-spacing: 0.06em; }
+#dash .pricemap-live {
+  background: rgba(5, 150, 105, 0.12) !important;
+  color: #047857 !important;
+  border: 1px solid rgba(5, 150, 105, 0.24) !important;
+  border-radius: 999px !important;
+}
+#dash .planned-footer-text { color: var(--ink-faint) !important; }
+#dash .recalc-text { color: var(--accent-ink) !important; }
+#dash .recalc-spin-icon { color: var(--accent) !important; }
+#dash .btn-planned-recalc {
+  background: rgba(255, 255, 255, 0.74) !important;
+  border: 1px solid rgba(37, 99, 235, 0.20) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--lift-1) !important;
+}
+#dash .btn-planned-recalc:hover {
+  background: #fff !important;
+  border-color: var(--hairline-bright) !important;
+  box-shadow: 0 12px 26px -18px rgba(37, 99, 235, 0.8) !important;
+}
+
+/* ---- 3.9 BD access card (cross-link card on the Exness page) ----------- */
+#dash .bd-access-card {
+  background:
+    radial-gradient(420px 220px at 12% 0%, rgba(16, 185, 129, 0.14), transparent 62%),
+    var(--glass-card-bg) !important;
+}
+#dash .bd-access-head { background: transparent !important; border: none !important; }
+#dash .bd-access-flag {
+  background: rgba(5, 150, 105, 0.12) !important;
+  color: #047857 !important;
+  border: 1px solid rgba(5, 150, 105, 0.24) !important;
+  border-radius: 999px !important;
+}
+
+/* ---- 3.10 traders terminal ------------------------------------------- */
+#dash .tt-col-time, #dash .tt-col-side, #dash .tt-col-price,
+#dash .tt-col-total, #dash .tt-col-trader, #dash .tt-col-action {
+  color: var(--ink-faint) !important;
+  letter-spacing: 0.06em;
+}
+#dash .table-scroll {
+  background: rgba(255, 255, 255, 0.45) !important;
+  border: 1px solid rgba(255, 255, 255, 0.85) !important;
+  border-radius: 12px !important;
+}
+#dash .tt-controls { gap: 6px; display: flex; flex-wrap: wrap; }
+
+/* ---- 3.11 whale flow -------------------------------------------------- */
+#dash .wf-market-wrap,
+#dash .wf-legend,
+#dash .wf-actions {
+  background: rgba(255, 255, 255, 0.58) !important;
+  -webkit-backdrop-filter: var(--glass-blur-sm) !important;
+  backdrop-filter: var(--glass-blur-sm) !important;
+  border: 1px solid rgba(255, 255, 255, 0.88) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--lift-1) !important;
+  padding: 6px 10px !important;
+}
+#dash .wf-icon { color: var(--accent-ink) !important; }
+#dash .wf-grow { flex: 1 1 auto; }
+#dash .wf-pulse {
+  background: #10b981 !important;
+  border-radius: 999px !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.9) !important;
+}
+#dash .wf-foot-dot { background: var(--accent) !important; border-radius: 999px !important; }
+
+/* ---- 3.12 drawers ----------------------------------------------------- */
+#dash .side-drawer-left,
+#dash .side-drawer-right,
+#dash .drawer-view {
+  background: var(--glass-card-bg) !important;
+  -webkit-backdrop-filter: var(--glass-blur-lg) !important;
+  backdrop-filter: var(--glass-blur-lg) !important;
+  border: var(--glass-border) !important;
+  box-shadow: var(--lift-3) !important;
+}
+#dash .drawer-view { border-radius: 18px !important; }
+#dash .feed-panel-head,
+#dash .drawer-head-actions {
+  border-bottom: 1px solid var(--hairline-soft) !important;
+  padding-bottom: 8px !important;
+}
+
+/* ---- 3.13 misc layout helpers (colour only, never layout) ------------- */
+#dash .pill,
+#dash .chips,
+#dash .bot-chips-side .chip,
+#dash .check,
+#dash .sortable,
+#dash .num,
+#dash .sep,
+#dash .big,
+#dash .small,
+#dash .tall,
+#dash .wide,
+#dash .wrap,
+#dash .grow { background: transparent !important; }
+#dash .pill {
+  background: rgba(255, 255, 255, 0.72) !important;
+  border: 1px solid rgba(37, 99, 235, 0.16) !important;
+  border-radius: 999px !important;
+  box-shadow: var(--glass-inner-hi) !important;
+}
+#dash .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+#dash .check { color: #059669 !important; }
+#dash .num { font-family: var(--mono) !important; font-variant-numeric: tabular-nums; }
+#dash .sep { color: rgba(37, 99, 235, 0.28) !important; }
+#dash .stopped, #dash .deactive { opacity: 0.62 !important; filter: saturate(0.55) !important; }
+#dash .s-name { color: var(--ink) !important; }
+#dash .s-price { color: var(--ink) !important; font-variant-numeric: tabular-nums; }
+#dash .s-sub { color: var(--ink-faint) !important; }
+#dash .b-open-text { color: var(--ink-faint) !important; }
+#dash .mh-bar-buy { background: linear-gradient(90deg, #10b981, #34d399) !important; }
+#dash .binance-logo-svg { filter: none !important; }
+
+/* ------------------------------------------------- 4. controls over glass */
+#dash input, #dash select, #dash textarea,
+#connect-view input, #connect-view select,
+.modal-card input, .modal-card select, .modal-card textarea {
+  background: rgba(255, 255, 255, 0.82) !important;
+  border: 1px solid rgba(37, 99, 235, 0.18) !important;
+  border-radius: 12px !important;
+  color: var(--ink) !important;
+  box-shadow: var(--glass-inner-hi), inset 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+#dash input:hover, #dash select:hover, #dash textarea:hover,
+#connect-view input:hover, #connect-view select:hover {
+  border-color: rgba(37, 99, 235, 0.30) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+}
+#dash input:focus, #dash select:focus, #dash textarea:focus,
+#connect-view input:focus, #connect-view select:focus,
+.modal-card input:focus, .modal-card select:focus, .modal-card textarea:focus {
+  outline: none !important;
+  border-color: rgba(37, 99, 235, 0.55) !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14), var(--glass-inner-hi) !important;
+}
+#dash input::placeholder, #connect-view input::placeholder { color: #98a6bd !important; }
+
+/* chips / tabs / toggles */
+#dash .chip,
+#dash .tt-filter-btn,
+#dash .bof-filter,
+#dash .wf-btn,
+#dash .tv-chart-btn,
+#dash .news-impact-btn,
+#dash .ai-tab,
+#dash .drawer-tab,
+#dash .b-tab-btn,
+#dash .b-tf-btn {
+  background: rgba(255, 255, 255, 0.66) !important;
+  border: 1px solid rgba(37, 99, 235, 0.16) !important;
+  border-radius: 999px !important;
+  color: var(--ink-dim) !important;
+  box-shadow: var(--glass-inner-hi) !important;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+#dash .chip:hover,
+#dash .tt-filter-btn:hover,
+#dash .bof-filter:hover,
+#dash .wf-btn:hover,
+#dash .tv-chart-btn:hover,
+#dash .news-impact-btn:hover,
+#dash .ai-tab:hover,
+#dash .drawer-tab:hover,
+#dash .b-tab-btn:hover,
+#dash .b-tf-btn:hover {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-color: rgba(37, 99, 235, 0.32) !important;
+  color: var(--accent-ink) !important;
+}
+#dash .chip.active,
+#dash .tt-filter-btn.active,
+#dash .bof-filter.active,
+#dash .wf-btn.active,
+#dash .tv-chart-btn.active,
+#dash .news-impact-btn.active,
+#dash .ai-tab.active,
+#dash .drawer-tab.active,
+#dash .b-tab-btn.active,
+#dash .b-tf-btn.active {
+  background: linear-gradient(140deg, rgba(37, 99, 235, 0.95), rgba(56, 189, 248, 0.88)) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  box-shadow: 0 10px 24px -14px rgba(37, 99, 235, 0.95) !important;
+  font-weight: 650 !important;
+}
+#dash .drawer-tab-badge {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-radius: 999px !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9) !important;
+}
+
+/* buttons */
+#dash .btn,
+#connect-view .btn,
+.modal-card .btn {
+  border-radius: 12px !important;
+  transition: transform 0.14s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+#dash .btn:hover, #connect-view .btn:hover, .modal-card .btn:hover { transform: translateY(-1px); }
+#dash .btn:active, #connect-view .btn:active { transform: translateY(0); }
+#dash .btn.ghost,
+#connect-view .btn.ghost {
+  background: rgba(255, 255, 255, 0.70) !important;
+  border: 1px solid rgba(37, 99, 235, 0.18) !important;
+  color: var(--ink-dim) !important;
+  box-shadow: var(--glass-inner-hi) !important;
+}
+#dash .btn.ghost:hover,
+#connect-view .btn.ghost:hover {
+  background: #fff !important;
+  border-color: var(--hairline-bright) !important;
+  color: var(--accent-ink) !important;
+}
+#dash .btn.primary,
+#connect-view .btn.primary,
+.modal-card .btn.primary {
+  background: linear-gradient(140deg, #2563eb, #3b82f6 55%, #38bdf8) !important;
+  border: 1px solid rgba(37, 99, 235, 0.55) !important;
+  color: #fff !important;
+  box-shadow: 0 12px 28px -16px rgba(37, 99, 235, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.45) !important;
+}
+#dash .btn.primary:hover,
+#connect-view .btn.primary:hover,
+.modal-card .btn.primary:hover {
+  box-shadow: 0 18px 36px -18px rgba(37, 99, 235, 1), inset 0 1px 0 rgba(255, 255, 255, 0.55) !important;
+  filter: brightness(1.04);
+}
+#dash .icon-btn,
+#dash .pw-toggle,
+#dash .lang-btn,
+#dash .voice-btn,
+#dash .btn-label,
+#dash .btn-voice-toggle {
+  background: rgba(255, 255, 255, 0.66) !important;
+  border: 1px solid rgba(37, 99, 235, 0.16) !important;
+  border-radius: 12px !important;
+  color: var(--ink-dim) !important;
+  box-shadow: var(--glass-inner-hi) !important;
+}
+#dash .icon-btn:hover,
+#dash .pw-toggle:hover,
+#dash .lang-btn:hover,
+#dash .voice-btn:hover,
+#dash .btn-voice-toggle:hover {
+  background: #fff !important;
+  border-color: var(--hairline-bright) !important;
+  color: var(--accent-ink) !important;
+  box-shadow: 0 12px 24px -18px rgba(37, 99, 235, 0.9) !important;
+}
+#dash .voice-icon { color: var(--accent) !important; }
+#dash .voice-text { color: var(--ink-faint) !important; font-size: 11px; }
+#dash .machine-led-pulse {
+  background: #10b981 !important;
+  border-radius: 999px !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18), 0 0 12px rgba(16, 185, 129, 0.75) !important;
+}
+
+/* --------------------------------------------- 5. overlays over the canvas */
+#dash .modal-card,
+#dash .about-me-dialog,
+#dash .dashboard-password-dialog {
+  background: var(--glass-card-bg) !important;
+  -webkit-backdrop-filter: var(--glass-blur-lg) !important;
+  backdrop-filter: var(--glass-blur-lg) !important;
+  border: var(--glass-border) !important;
+  border-radius: 24px !important;
+  box-shadow: var(--lift-3), inset 0 1px 0 #fff !important;
+}
+#dash .about-me-modal,
+#dash .dashboard-password-modal,
+#settings-modal,
+.modal {
+  background: rgba(15, 23, 42, 0.26) !important;
+  -webkit-backdrop-filter: blur(8px) saturate(120%) !important;
+  backdrop-filter: blur(8px) saturate(120%) !important;
+}
+#dash .about-me-kicker {
+  color: var(--accent-ink) !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+#dash .about-me-copy { color: var(--ink-dim) !important; line-height: 1.65; }
+#dash .about-me-photo {
+  border-radius: 18px !important;
+  border: 1px solid rgba(255, 255, 255, 0.92) !important;
+  box-shadow: var(--lift-2) !important;
+}
+#dash .about-me-close,
+#dash .about-me-trigger,
+#dash .about-login-trigger,
+#dash .about-side-trigger {
+  background: rgba(255, 255, 255, 0.72) !important;
+  border: 1px solid rgba(37, 99, 235, 0.18) !important;
+  border-radius: 999px !important;
+  color: var(--ink-dim) !important;
+  box-shadow: var(--glass-inner-hi) !important;
+}
+#dash .about-me-close:hover,
+#dash .about-me-trigger:hover,
+#dash .about-login-trigger:hover,
+#dash .about-side-trigger:hover {
+  background: #fff !important;
+  border-color: var(--hairline-bright) !important;
+  color: var(--accent-ink) !important;
+}
+#dash .dashboard-password-error {
+  background: rgba(220, 38, 38, 0.10) !important;
+  border: 1px solid rgba(220, 38, 38, 0.22) !important;
+  border-radius: 10px !important;
+  color: #b91c1c !important;
+}
+#dash .dashboard-password-help { color: var(--ink-faint) !important; font-size: 11px; }
+#dash .dashboard-password-actions { gap: 8px; }
+#dash .pw-wrap { background: transparent !important; }
+
+/* toasts */
+.toasts .toast, .toast {
+  background: var(--glass-card-bg) !important;
+  -webkit-backdrop-filter: var(--glass-blur-md) !important;
+  backdrop-filter: var(--glass-blur-md) !important;
+  border: var(--glass-border) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--lift-2) !important;
+  color: var(--ink) !important;
+}
+
+/* --------------------------------------------- 6. micro-polish + a11y */
+#dash *,
+#connect-view * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+#dash ::selection, #connect-view ::selection {
+  background: rgba(37, 99, 235, 0.22) !important;
+  color: #0b1220 !important;
+}
+
+#dash ::-webkit-scrollbar { width: 10px; height: 10px; }
+#dash ::-webkit-scrollbar-track { background: rgba(37, 99, 235, 0.05) !important; border-radius: 999px; }
+#dash ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.42), rgba(56, 189, 248, 0.42)) !important;
+  border-radius: 999px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+#dash ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.62), rgba(56, 189, 248, 0.62)) !important;
+  background-clip: padding-box !important;
+}
+
+/* numeric readability on frost */
+#dash [class*="val"],
+#dash [class*="value"],
+#dash [class*="price"],
+#dash .acc-value { font-variant-numeric: tabular-nums; }
+
+/* keep semantic colours winning over the generic chip/tab rules above */
+#dash .buy, #dash .is-buy, #dash .side-buy, #dash .s-action.buy {
+  color: #047857 !important;
+  background: rgba(5, 150, 105, 0.12) !important;
+  border-color: rgba(5, 150, 105, 0.26) !important;
+}
+#dash .sell, #dash .is-sell, #dash .side-sell, #dash .s-action.sell {
+  color: #b91c1c !important;
+  background: rgba(220, 38, 38, 0.10) !important;
+  border-color: rgba(220, 38, 38, 0.24) !important;
+}
+#dash .win, #dash .positive, #dash .up { color: #047857 !important; }
+#dash .loss, #dash .negative, #dash .down { color: #b91c1c !important; }
+
+/* keyboard focus must stay visible on every glass control */
+#dash a:focus-visible,
+#dash button:focus-visible,
+#connect-view a:focus-visible,
+#connect-view button:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.65) !important;
+  outline-offset: 2px !important;
+  border-radius: 10px;
+}
+
+/* respect reduced-motion / prefers-contrast */
+@media (prefers-reduced-motion: reduce) {
+  #dash .btn:hover, #connect-view .btn:hover, .modal-card .btn:hover { transform: none !important; }
+  #dash .trend-bar-fill { transition: none !important; }
+}
+@media (prefers-contrast: more) {
+  #dash .panel, #dash .feed-panel, #dash .watch-grid,
+  #connect-view .connect-card, #dash .modal-card {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(37, 99, 235, 0.42) !important;
+  }
+  #dash .chip, #dash .ai-tab, #dash .drawer-tab { border-color: rgba(37, 99, 235, 0.42) !important; }
+}
+
+/* fallback: browsers without backdrop-filter get a solid frost instead of a
+   see-through panel that would be unreadable */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  #dash .panel,
+  #dash .feed-panel,
+  #dash .watch-grid,
+  #connect-view .connect-card,
+  #dash .modal-card,
+  #dash .softradex-terminal-section {
+    background: rgba(255, 255, 255, 0.94) !important;
+  }
+}
+
+/* ------------------------------------- 7. final coverage: remaining 30 classes
+   Text/value/label roles from the last pass. Pure layout wrappers
+   (flow-stage, mh-main, topbar-right, hidden, ...) are deliberately left
+   untouched — they carry no surface or colour of their own. */
+#dash .logo,
+#dash .softradex-term-logo {
+  border-radius: 10px !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 8px 18px -14px rgba(30, 64, 175, 0.7) !important;
+}
+#dash .term-brand-block { background: transparent !important; border: none !important; }
+#dash .binance-term-actions {
+  background: rgba(255, 255, 255, 0.62) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--lift-1) !important;
+}
+#dash .watch-panel-icon-wrap,
+#dash .sessions-pick {
+  background: var(--accent-wash) !important;
+  border: 1px solid rgba(37, 99, 235, 0.18) !important;
+  border-radius: 10px !important;
+  color: var(--accent-ink) !important;
+}
+#dash .watch-head-left { color: var(--ink) !important; }
+#dash .mh-head-bar { border-bottom: 1px solid var(--hairline-soft) !important; }
+#dash .mh-stats-row { gap: 8px; }
+#dash .b-legend-item { color: var(--ink-dim) !important; }
+#dash .b-open-val { color: var(--ink) !important; font-variant-numeric: tabular-nums; }
+#dash .panel-total {
+  background: var(--accent-wash) !important;
+  border: 1px solid rgba(37, 99, 235, 0.18) !important;
+  border-radius: 10px !important;
+  color: var(--accent-ink) !important;
+  font-variant-numeric: tabular-nums;
+}
+#dash .planned-trades-head {
+  border-bottom: 1px solid var(--hairline-soft) !important;
+  background: transparent !important;
+}
+#dash .planned-trades-footer {
+  border-top: 1px solid var(--hairline-soft) !important;
+  background: rgba(255, 255, 255, 0.5) !important;
+  border-radius: 0 0 14px 14px !important;
+}
+#dash .planned-timer-pill,
+#dash .planned-last-updated {
+  background: rgba(255, 255, 255, 0.70) !important;
+  border: 1px solid rgba(37, 99, 235, 0.16) !important;
+  border-radius: 999px !important;
+  color: var(--ink-faint) !important;
+  font-variant-numeric: tabular-nums;
+}
+#dash .news-bias-row,
+#dash .news-predicted-move {
+  background: rgba(255, 255, 255, 0.60) !important;
+  border: 1px solid rgba(255, 255, 255, 0.88) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--lift-1) !important;
+  color: var(--ink-dim) !important;
+}
+#dash .tt-title-wrap { color: var(--ink) !important; }
+#dash .tt-stats-bar,
+#dash .tt-foot-total {
+  background: rgba(255, 255, 255, 0.62) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--lift-1) !important;
+  font-variant-numeric: tabular-nums;
+}
+#dash .tt-col-amount { color: var(--ink-faint) !important; letter-spacing: 0.06em; }
+#dash .tt-filters { gap: 6px; background: transparent !important; border: none !important; }
+#dash .tt-meter-wrap {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-radius: 999px !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.10) !important;
+  overflow: hidden;
+}
+#dash .bot-side-curve { background: transparent !important; border: none !important; filter: none !important; }
+
+

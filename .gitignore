@@ -27,3 +27,12 @@ link_check_tmp.py
 *.log
 data/_*.json
 data/*.log
+
+# Archives & Backup bundles
+*.rar
+*.zip
+*.tar.gz
+
+# Temporary screenshot harnesses & captures
+data/shot-*.png
+web/_shot_*.html

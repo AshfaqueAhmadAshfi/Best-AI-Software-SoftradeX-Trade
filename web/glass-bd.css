@@ -1,0 +1,370 @@
+/* ============================================================================
+   glass-bd.css — GLASSMORPHISM for the BD (DSE) dashboard
+   Loaded LAST on bd.html, after bd.css.
+
+   bd.css is a self-contained DARK theme (39 hardcoded dark surfaces, 2 blurs).
+   Rather than rewrite 2793 lines, this layer re-maps the same --bd-* tokens to
+   a light glass palette and re-skins the hardcoded dark surfaces on top, so the
+   BD page shares the Exness page's visual language without touching its layout.
+
+   Rules of this layer:
+     · frosted white glass over a soft blue/mint canvas
+     · green stays the BD accent (DSE up-colour), red for down, gold for SIM
+     · visuals only — no layout, no IDs, no JS contract changed
+   ========================================================================== */
+
+body.bd-dashboard {
+  /* ---- token remap: dark -> light glass ---- */
+  --bd-bg: #f4f8ff;
+  --bd-bg-soft: #eef4ff;
+  --bd-panel: rgba(255, 255, 255, 0.72);
+  --bd-panel-2: rgba(255, 255, 255, 0.62);
+  --bd-panel-3: rgba(255, 255, 255, 0.86);
+  --bd-line: rgba(13, 148, 136, 0.16);
+  --bd-line-bright: rgba(13, 148, 136, 0.34);
+  --bd-text: #0f172a;
+  --bd-dim: #475569;
+  --bd-faint: #7b8aa3;
+
+  --bd-green: #059669;
+  --bd-green-2: #10b981;
+  --bd-green-soft: rgba(5, 150, 105, 0.12);
+  --bd-red: #dc2626;
+  --bd-red-soft: rgba(220, 38, 38, 0.10);
+  --bd-gold: #b45309;
+  --bd-gold-soft: rgba(180, 83, 9, 0.12);
+  --bd-blue: #2563eb;
+  --bd-blue-soft: rgba(37, 99, 235, 0.10);
+
+  --bd-glass-blur: blur(24px) saturate(180%);
+  --bd-glass-card:
+    radial-gradient(120% 70% at 16% -8%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 58%),
+    linear-gradient(158deg, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0.56) 100%);
+  --bd-lift-1: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 10px 24px -18px rgba(13, 100, 90, 0.40);
+  --bd-lift-2: 0 1px 0 rgba(255, 255, 255, 1) inset, 0 20px 44px -28px rgba(13, 100, 90, 0.50);
+  --bd-lift-3: 0 1px 0 rgba(255, 255, 255, 1) inset, 0 34px 64px -38px rgba(13, 100, 90, 0.60);
+
+  /* ---- canvas ---- */
+  background-color: #f4f8ff !important;
+  background-image:
+    radial-gradient(1150px 740px at 6% -14%, rgba(16, 185, 129, 0.20), transparent 62%),
+    radial-gradient(980px 640px at 98% -2%, rgba(37, 99, 235, 0.22), transparent 60%),
+    radial-gradient(900px 680px at 88% 98%, rgba(180, 83, 9, 0.12), transparent 62%),
+    radial-gradient(1200px 900px at 50% 46%, rgba(255, 255, 255, 0.60), transparent 70%),
+    linear-gradient(180deg, #f9fcff 0%, #ebf4ff 52%, #e6f1fc 100%) !important;
+  background-attachment: fixed !important;
+  color: var(--bd-text) !important;
+}
+
+/* the dark grid overlay becomes a faint light grid */
+body.bd-dashboard::before {
+  background-image:
+    linear-gradient(rgba(13, 148, 136, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(13, 148, 136, 0.05) 1px, transparent 1px) !important;
+  background-size: 46px 46px !important;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 78%) !important;
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 78%) !important;
+}
+
+/* ------------------------------------------------------------------ topbar */
+body.bd-dashboard .topbar {
+  background: rgba(255, 255, 255, 0.72) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 0 14px 34px -26px rgba(13, 100, 90, 0.55) !important;
+  -webkit-backdrop-filter: var(--bd-glass-blur) !important;
+  backdrop-filter: var(--bd-glass-blur) !important;
+}
+body.bd-dashboard .topbar::after {
+  background: linear-gradient(90deg, transparent, rgba(5, 150, 105, 0.35), rgba(37, 99, 235, 0.28), transparent) !important;
+  opacity: 0.9 !important;
+}
+body.bd-dashboard .brand-text strong { color: #0f172a !important; }
+body.bd-dashboard .brand-text span { color: var(--bd-dim) !important; }
+body.bd-dashboard .brand-mark img {
+  border-radius: 14px !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 12px 26px -18px rgba(13, 100, 90, 0.6) !important;
+}
+body.bd-dashboard .bd-sim-pill {
+  background: rgba(255, 255, 255, 0.80) !important;
+  border: 1px solid rgba(180, 83, 9, 0.26) !important;
+  color: #92400e !important;
+  border-radius: 999px !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset !important;
+}
+body.bd-dashboard .bd-sim-pill i { background: #f59e0b !important; box-shadow: 0 0 8px rgba(245, 158, 11, 0.8) !important; }
+body.bd-dashboard .bd-clock {
+  background: rgba(255, 255, 255, 0.70) !important;
+  border: 1px solid rgba(13, 148, 136, 0.18) !important;
+  border-radius: 12px !important;
+  color: #0f172a !important;
+}
+body.bd-dashboard .bd-clock b { color: #0f172a !important; }
+body.bd-dashboard .bd-clock small { color: var(--bd-faint) !important; }
+body.bd-dashboard .bd-bdt-badge {
+  background: var(--bd-green-soft) !important;
+  border: 1px solid rgba(5, 150, 105, 0.24) !important;
+  color: #047857 !important;
+  border-radius: 999px !important;
+}
+body.bd-dashboard .bd-home-btn {
+  background: rgba(255, 255, 255, 0.70) !important;
+  border: 1px solid rgba(13, 148, 136, 0.18) !important;
+  border-radius: 12px !important;
+  color: var(--bd-dim) !important;
+}
+body.bd-dashboard .bd-home-btn:hover {
+  background: #fff !important;
+  border-color: var(--bd-line-bright) !important;
+  color: #047857 !important;
+}
+body.bd-dashboard #bd-dse-status { color: var(--bd-dim) !important; }
+
+/* ------------------------------------------------------------ glass surfaces
+   Every BD card / panel / strip. Applied by role so new markup inherits it. */
+body.bd-dashboard .dash > section,
+body.bd-dashboard .dash > .card,
+body.bd-dashboard .card,
+body.bd-dashboard .panel,
+body.bd-dashboard .softradex-terminal-section,
+body.bd-dashboard .watch-grid,
+body.bd-dashboard .all-economic-news-panel,
+body.bd-dashboard .sessions-radar-panel,
+body.bd-dashboard .struct-card,
+body.bd-dashboard .bot-panel,
+body.bd-dashboard .planned-trades-card-wrap,
+body.bd-dashboard .flow-rail,
+body.bd-dashboard .bd-access-card {
+  background: var(--bd-glass-card) !important;
+  -webkit-backdrop-filter: var(--bd-glass-blur) !important;
+  backdrop-filter: var(--bd-glass-blur) !important;
+  border: 1px solid rgba(255, 255, 255, 0.94) !important;
+  border-radius: 20px !important;
+  box-shadow: var(--bd-lift-2), inset 0 0 0 1px rgba(13, 148, 136, 0.06) !important;
+  color: var(--bd-text) !important;
+}
+
+/* nested surfaces: lighter, no extra blur pass */
+body.bd-dashboard .dash .watch-card,
+body.bd-dashboard .dash .bot-settings,
+body.bd-dashboard .dash .bot-settings-4,
+body.bd-dashboard .dash .bot2-trend-box,
+body.bd-dashboard .dash .panel-foot,
+body.bd-dashboard .dash .pricemap-rows,
+body.bd-dashboard .dash .planned-trades-list,
+body.bd-dashboard .dash .all-news-body,
+body.bd-dashboard .dash .all-news-feed,
+body.bd-dashboard .dash .struct-badges-grid,
+body.bd-dashboard .dash .table-scroll {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.80), rgba(255, 255, 255, 0.54)) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.90) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--bd-lift-1) !important;
+}
+
+/* signature top hairline */
+body.bd-dashboard .card::after,
+body.bd-dashboard .panel::after,
+body.bd-dashboard .softradex-terminal-section::after,
+body.bd-dashboard .watch-grid::after {
+  background: linear-gradient(90deg, transparent, rgba(5, 150, 105, 0.32), rgba(37, 99, 235, 0.24), transparent) !important;
+}
+
+/* ------------------------------------------------------------- heading ink */
+body.bd-dashboard .dash h1,
+body.bd-dashboard .dash h2,
+body.bd-dashboard .dash h3,
+body.bd-dashboard .dash h4,
+body.bd-dashboard .dash strong { color: #0f172a !important; }
+body.bd-dashboard .dash .muted,
+body.bd-dashboard .dash small { color: #64748b !important; }
+
+/* ------------------------------------------------------------- account strip */
+body.bd-dashboard .account-strip.bd-strip {
+  background: rgba(255, 255, 255, 0.74) !important;
+  -webkit-backdrop-filter: var(--bd-glass-blur) !important;
+  backdrop-filter: var(--bd-glass-blur) !important;
+  border: 1px solid rgba(255, 255, 255, 0.94) !important;
+  border-radius: 16px !important;
+  box-shadow: var(--bd-lift-2) !important;
+}
+body.bd-dashboard .bd-strip .acc-item {
+  background: transparent !important;
+  border: none !important;
+  border-right: 1px solid rgba(13, 148, 136, 0.12) !important;
+  box-shadow: none !important;
+}
+body.bd-dashboard .bd-strip .acc-item:hover { background: rgba(255, 255, 255, 0.72) !important; border-radius: 10px !important; }
+body.bd-dashboard .bd-strip .acc-item.highlight { background: var(--bd-green-soft) !important; border-radius: 10px !important; }
+body.bd-dashboard .bd-strip .acc-label { color: var(--bd-faint) !important; }
+body.bd-dashboard .bd-strip .acc-value { color: #0f172a !important; text-shadow: none !important; }
+body.bd-dashboard .bd-strip .acc-item.highlight .acc-value { color: #047857 !important; }
+
+/* --------------------------------------------------- terminal card interior */
+body.bd-dashboard .softradex-term-topbar,
+body.bd-dashboard .binance-term-actions,
+body.bd-dashboard .binance-ticker-strip,
+body.bd-dashboard .binance-tf-tabs {
+  background: rgba(255, 255, 255, 0.62) !important;
+  border-bottom: 1px solid rgba(13, 148, 136, 0.12) !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+body.bd-dashboard .binance-term-workspace,
+body.bd-dashboard .binance-chart-wrapper,
+body.bd-dashboard .binance-canvas-box { background: transparent !important; }
+body.bd-dashboard .term-brand-name { color: #0f172a !important; }
+body.bd-dashboard .term-pro-tag {
+  background: var(--bd-blue-soft) !important;
+  border: 1px solid rgba(37, 99, 235, 0.22) !important;
+  color: #1d4ed8 !important;
+  border-radius: 999px !important;
+}
+body.bd-dashboard .softradex-term-logo { border-radius: 8px !important; }
+
+/* tabs / chips / toggles */
+body.bd-dashboard .b-tab-btn,
+body.bd-dashboard .b-tf-btn,
+body.bd-dashboard .term-toggle-btn,
+body.bd-dashboard .chip,
+body.bd-dashboard .ai-tab,
+body.bd-dashboard .drawer-tab,
+body.bd-dashboard .tt-filter-btn,
+body.bd-dashboard .wf-btn,
+body.bd-dashboard .news-impact-btn {
+  background: rgba(255, 255, 255, 0.68) !important;
+  border: 1px solid rgba(13, 148, 136, 0.16) !important;
+  border-radius: 999px !important;
+  color: var(--bd-dim) !important;
+  box-shadow: var(--bd-lift-1) !important;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+body.bd-dashboard .b-tab-btn:hover,
+body.bd-dashboard .b-tf-btn:hover,
+body.bd-dashboard .term-toggle-btn:hover,
+body.bd-dashboard .chip:hover,
+body.bd-dashboard .ai-tab:hover,
+body.bd-dashboard .drawer-tab:hover {
+  background: #fff !important;
+  border-color: var(--bd-line-bright) !important;
+  color: #047857 !important;
+}
+body.bd-dashboard .b-tab-btn.active,
+body.bd-dashboard .b-tf-btn.active,
+body.bd-dashboard .term-toggle-btn.active,
+body.bd-dashboard .chip.active,
+body.bd-dashboard .ai-tab.active,
+body.bd-dashboard .drawer-tab.active {
+  background: linear-gradient(140deg, rgba(5, 150, 105, 0.95), rgba(16, 185, 129, 0.88)) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  box-shadow: 0 10px 24px -14px rgba(5, 150, 105, 0.95) !important;
+  font-weight: 650 !important;
+}
+body.bd-dashboard .b-open-chip {
+  background: rgba(255, 255, 255, 0.74) !important;
+  border: 1px solid rgba(13, 148, 136, 0.18) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--bd-lift-1) !important;
+}
+body.bd-dashboard .b-open-lbl { color: var(--bd-faint) !important; }
+body.bd-dashboard .b-open-val { color: #0f172a !important; }
+body.bd-dashboard .b-stat .b-lbl,
+body.bd-dashboard .b-legend-sym { color: var(--bd-faint) !important; }
+body.bd-dashboard .b-stat .b-val { color: #0f172a !important; }
+body.bd-dashboard .b-stat-price .b-val { color: #047857 !important; }
+
+/* ------------------------------------------------------ forms over glass */
+body.bd-dashboard input,
+body.bd-dashboard select,
+body.bd-dashboard textarea {
+  background: rgba(255, 255, 255, 0.84) !important;
+  border: 1px solid rgba(13, 148, 136, 0.18) !important;
+  border-radius: 12px !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset !important;
+}
+body.bd-dashboard input:focus,
+body.bd-dashboard select:focus,
+body.bd-dashboard textarea:focus {
+  outline: none !important;
+  border-color: rgba(5, 150, 105, 0.55) !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.14) !important;
+}
+body.bd-dashboard input::placeholder { color: #98a6bd !important; }
+
+/* primary button uses the BD green, not the Exness blue */
+body.bd-dashboard .btn.primary {
+  background: linear-gradient(140deg, #059669, #10b981 60%, #34d399) !important;
+  border: 1px solid rgba(5, 150, 105, 0.5) !important;
+  color: #fff !important;
+  box-shadow: 0 12px 28px -16px rgba(5, 150, 105, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.45) !important;
+}
+body.bd-dashboard .btn.ghost {
+  background: rgba(255, 255, 255, 0.70) !important;
+  border: 1px solid rgba(13, 148, 136, 0.18) !important;
+  color: var(--bd-dim) !important;
+}
+
+/* ------------------------------------------------------------- scrollbars */
+body.bd-dashboard ::-webkit-scrollbar-track { background: rgba(5, 150, 105, 0.06) !important; }
+body.bd-dashboard ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(5, 150, 105, 0.42), rgba(37, 99, 235, 0.38)) !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+  border-radius: 999px !important;
+}
+body.bd-dashboard { scrollbar-color: rgba(5, 150, 105, 0.35) rgba(5, 150, 105, 0.06) !important; }
+body.bd-dashboard ::selection { background: rgba(5, 150, 105, 0.22) !important; color: #0b1220 !important; }
+
+/* --------------------------------------------------------- semantic colours */
+body.bd-dashboard .up, body.bd-dashboard .positive, body.bd-dashboard .buy { color: #047857 !important; }
+body.bd-dashboard .down, body.bd-dashboard .negative, body.bd-dashboard .sell { color: #b91c1c !important; }
+
+/* overlays */
+body.bd-dashboard .modal-card,
+body.bd-dashboard .side-drawer {
+  background: var(--bd-glass-card) !important;
+  -webkit-backdrop-filter: blur(26px) saturate(190%) !important;
+  backdrop-filter: blur(26px) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.94) !important;
+  border-radius: 22px !important;
+  box-shadow: var(--bd-lift-3) !important;
+}
+body.bd-dashboard .modal,
+body.bd-dashboard .drawer-scrim {
+  background: rgba(15, 23, 42, 0.26) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+/* a11y */
+body.bd-dashboard a:focus-visible,
+body.bd-dashboard button:focus-visible {
+  outline: 2px solid rgba(5, 150, 105, 0.65) !important;
+  outline-offset: 2px !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  body.bd-dashboard .b-tab-btn, body.bd-dashboard .b-tf-btn { transition: none !important; }
+}
+@media (prefers-contrast: more) {
+  body.bd-dashboard .card, body.bd-dashboard .panel,
+  body.bd-dashboard .softradex-terminal-section, body.bd-dashboard .watch-grid {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(5, 150, 105, 0.42) !important;
+  }
+}
+
+/* fallback without backdrop-filter */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  body.bd-dashboard .card,
+  body.bd-dashboard .panel,
+  body.bd-dashboard .softradex-terminal-section,
+  body.bd-dashboard .watch-grid,
+  body.bd-dashboard .account-strip.bd-strip,
+  body.bd-dashboard .modal-card {
+    background: rgba(255, 255, 255, 0.94) !important;
+  }
+}
