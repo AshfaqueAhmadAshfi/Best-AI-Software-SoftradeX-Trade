@@ -940,6 +940,10 @@
     const plotMax = maxPrice + bufTop;
     const plotRange = plotMax - plotMin;
 
+    window.dispatchEvent(new CustomEvent('chart:price-range', {
+      detail: { symbol: currentSymbol, min: plotMin, max: plotMax, height: candleH }
+    }));
+
     function priceToY(p) {
       return candleH - ((p - plotMin) / plotRange) * candleH;
     }

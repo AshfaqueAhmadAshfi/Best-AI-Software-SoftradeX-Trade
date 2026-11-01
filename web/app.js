@@ -2464,6 +2464,9 @@ function renderBot3(d) {
       }).join('');
     }
   }
+  window.dispatchEvent(new CustomEvent('bot3:planned-trades', {
+    detail: { symbol: shown, planned: planned }
+  }));
 
   if (b3Panel) {
     const lotEl = $('bot3-lot');

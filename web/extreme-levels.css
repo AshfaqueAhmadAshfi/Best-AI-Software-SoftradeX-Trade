@@ -1,0 +1,50 @@
+/* Bot 3 planned extreme levels drawn over both chart views. */
+.extreme-levels-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  overflow: hidden;
+}
+.extreme-price-line {
+  position: absolute;
+  left: 0;
+  right: 68px;
+  display: flex;
+  align-items: center;
+  height: 0;
+  border-top: 2px solid currentColor;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, .35));
+}
+.extreme-price-line::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .72);
+}
+.extreme-price-line.buy { color: #16a34a; }
+.extreme-price-line.sell { color: #dc2626; }
+.extreme-price-label {
+  position: absolute;
+  left: 8px;
+  bottom: 5px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, .94);
+  font: 800 9px "JetBrains Mono", monospace;
+  white-space: nowrap;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, .16);
+}
+.extreme-price-line.buy .extreme-price-label { color: #15803d; }
+.extreme-price-line.sell .extreme-price-label { color: #b91c1c; }
+#tv-chart-box .extreme-levels-layer { z-index: 6; }
+#tv-chart-box .extreme-price-line { right: 52px; }
+@media (max-width: 700px) {
+  .extreme-price-line { right: 48px; }
+  #tv-chart-box .extreme-price-line { right: 40px; }
+  .extreme-price-label { left: 4px; font-size: 8px; }
+}
