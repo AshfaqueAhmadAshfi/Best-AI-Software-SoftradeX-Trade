@@ -36,6 +36,7 @@ data/*.log
 # React build artifacts and local dependencies
 frontend/node_modules/
 frontend/dist/
+frontend/*.tsbuildinfo
 
 # Temporary screenshot harnesses & captures
 data/shot-*.png
