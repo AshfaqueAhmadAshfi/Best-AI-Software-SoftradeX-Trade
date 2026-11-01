@@ -58,6 +58,13 @@
   let hasMovedDuringDrag = false;
 
   let lastWhaleAlert = null; // kept for the chart alert banner (set from big prints)
+  let plannedLevelPrices = [];
+
+  window.addEventListener('bot3:planned-trades', function (event) {
+    const planned = (event.detail && event.detail.planned) || [];
+    plannedLevelPrices = planned.map((item) => Number(item.price)).filter((price) => isFinite(price) && price > 0);
+    if (chartReady) renderChart();
+  });
 
   // Canvas Rounded Rectangle helper
   function drawRoundRect(c, x, y, w, h, r) {
@@ -931,6 +938,13 @@
         if (isFinite(nb.max) && nb.max > maxPrice && (nb.max - maxPrice) <= baseSpan * 1.5) maxPrice = nb.max;
       }
     }
+
+    // Keep Bot 3's five planned extreme levels inside the same price scale,
+    // so the green BUY and red SELL lines remain visible on market changes.
+    plannedLevelPrices.forEach((price) => {
+      if (price < minPrice) minPrice = price;
+      if (price > maxPrice) maxPrice = price;
+    });
 
     // Add 12% price buffer top and bottom to ensure whale badges have clear margin
     const priceRange = maxPrice - minPrice;
