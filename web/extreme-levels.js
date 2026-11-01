@@ -109,7 +109,9 @@
       ? terminal.getCurrentSymbol() : '';
     var validRange = range && isFinite(range.min) && isFinite(range.max) && range.max > range.min;
     var visible = validRange && matches(setupSymbol, chartSymbol);
-    var boxes = [document.getElementById('binance-canvas-box'), document.getElementById('tv-chart-box')];
+    // Planned extreme levels belong to the built-in MT5-style chart only.
+    // TradingView keeps its own native price scale and studies uncluttered.
+    var boxes = [document.getElementById('binance-canvas-box')];
 
     boxes.forEach(function (box) {
       var layer = ensureLayer(box);
