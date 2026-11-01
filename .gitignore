@@ -33,6 +33,10 @@ data/*.log
 *.zip
 *.tar.gz
 
+# React build artifacts and local dependencies
+frontend/node_modules/
+frontend/dist/
+
 # Temporary screenshot harnesses & captures
 data/shot-*.png
 web/_shot_*.html
