@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="/static/styles-ultra.css?v=20261025_flowboard3" />
     <link rel="stylesheet" href="/static/styles-mech.css?v=20261018_mktflow" />
     <!-- Clean white & blue glassmorphism theme — must load last so it wins the cascade -->
-    <link rel="stylesheet" href="/static/styles-glass.css?v=20261102_chartfix1" />
+    <link rel="stylesheet" href="/static/styles-glass.css?v=20261102_chartfix2" />
     <!-- Full-coverage glass pass: closes the remaining 185 unstyled classes -->
     <link rel="stylesheet" href="/static/styles-glass-v2.css?v=20261030_glassfull1" />
     <link rel="stylesheet" href="/static/about.css?v=20261030_about3" />
@@ -341,6 +341,11 @@
                 <button type="button" id="chart-zoom-in" title="Make candles larger">+</button>
                 <button type="button" id="chart-zoom-out" title="Make candles smaller">−</button>
                 <button type="button" id="chart-zoom-reset" title="Reset chart zoom">↺</button>
+              </div>
+              <div class="chart-price-controls" aria-label="Price scale controls">
+                <button type="button" id="chart-price-up" title="Move price scale up">▲</button>
+                <button type="button" id="chart-price-down" title="Move price scale down">▼</button>
+                <button type="button" id="chart-price-reset" title="Reset price scale">•</button>
               </div>
               <div class="chart-status-overlay" id="chart-status-overlay" hidden>
                 <span class="chart-status-title" id="chart-status-title"></span>
@@ -2046,14 +2051,14 @@
     </form>
   </div>
 
-  <script src="/static/softradex-terminal.js?v=20261102_chartfix1"></script>
+  <script src="/static/softradex-terminal.js?v=20261102_chartfix2"></script>
   <script src="/static/chart-news-events.js?v=20261029_news14"></script>
   <script src="/static/app.js?v=20261101_levels1"></script>
   <script src="/static/traders-terminal.js?v=20261022_globalflow3"></script>
   <script src="/static/binance-order-flow-terminal.js?v=20261025_open14v1"></script>
   <script src="/static/multi-exchange-order-flow.js?v=20261025_venues8"></script>
   <script src="/static/whale-flow.js?v=20261028_cpanel1"></script>
-  <script src="/static/tv-chart.js?v=20261102_chartfix1"></script>
+  <script src="/static/tv-chart.js?v=20261102_chartfix2"></script>
   <!-- Whales + news cards drawn inside the TradingView chart -->
   <script src="/static/chart-overlay.js?v=20261029_whales2"></script>
   <script src="/static/about-me.js?v=20261030_about1"></script>

@@ -52,8 +52,13 @@
   // Viewport & Interactive Pan / Zoom Navigation State
   let visibleCandlesCount = 55; // Zoom level: how many candles fit in viewport (16 to 220)
   let panOffset = 0;            // Pixels panned back into history (0 = live, > 0 = history)
+  let priceZoom = 1;            // Vertical price scale: below 1 zooms into price movement
+  let pricePan = 0;             // Vertical price shift, measured in base price-range units
   let isDragging = false;
+  let isPriceDragging = false;
   let dragStartX = 0;
+  let dragStartPricePan = 0;
+  let dragStartPriceY = 0;
   let dragStartPan = 0;
   let hasMovedDuringDrag = false;
 
@@ -947,11 +952,14 @@
     });
 
     // Add 12% price buffer top and bottom to ensure whale badges have clear margin
-    const priceRange = maxPrice - minPrice;
-    const bufTop = priceRange * 0.12;
-    const bufBtm = priceRange * 0.12;
-    const plotMin = minPrice - bufBtm;
-    const plotMax = maxPrice + bufTop;
+    const baseRange = Math.max(maxPrice - minPrice, 0.0000001);
+    const baseCenter = (minPrice + maxPrice) / 2;
+    const scaledRange = baseRange * priceZoom;
+    const viewCenter = baseCenter + pricePan * baseRange;
+    const bufTop = scaledRange * 0.12;
+    const bufBtm = scaledRange * 0.12;
+    const plotMin = viewCenter - scaledRange / 2 - bufBtm;
+    const plotMax = viewCenter + scaledRange / 2 + bufTop;
     const plotRange = plotMax - plotMin;
 
     window.dispatchEvent(new CustomEvent('chart:price-range', {
@@ -1478,6 +1486,8 @@
     crosshair = null;
     panOffset = 0;
     visibleCandlesCount = 55;
+    priceZoom = 1;
+    pricePan = 0;
     chartReady = false;
     lastTickAt = 0;
     tickerData = { price: 0, open24: 0, change: 0, high: 0, low: 0, vol: 0 };
@@ -1526,6 +1536,8 @@
     updateActiveTabs();
     panOffset = 0;
     visibleCandlesCount = 55;
+    priceZoom = 1;
+    pricePan = 0;
     setStatus('Loading ' + currentInterval + ' candles…', feedLabel(), 'loading');
     if (!feed || feed.readyState !== WebSocket.OPEN) connectFeed();
     else sendSubscription();
@@ -1576,6 +1588,15 @@
     canvas.addEventListener('mousedown', function (e) {
       if (e.button !== 0) return; // Left click only
       e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const chartW = (canvas.width / dpr) - PRICE_AXIS_W;
+      if (e.clientX - rect.left > chartW) {
+        isPriceDragging = true;
+        dragStartPriceY = e.clientY;
+        dragStartPricePan = pricePan;
+        canvas.style.cursor = 'ns-resize';
+        return;
+      }
       isDragging = true;
       hasMovedDuringDrag = false;
       dragStartX = e.clientX;
@@ -1585,6 +1606,13 @@
 
     window.addEventListener('mousemove', function (e) {
       if (!canvas) return;
+
+      if (isPriceDragging) {
+        const chartH = (canvas.height / dpr) - 22;
+        pricePan = dragStartPricePan - ((e.clientY - dragStartPriceY) / Math.max(chartH, 1)) * (1.2 / priceZoom);
+        scheduleChartRender();
+        return;
+      }
 
       if (isDragging) {
         e.preventDefault();
@@ -1621,6 +1649,10 @@
     });
 
     window.addEventListener('mouseup', function () {
+      if (isPriceDragging) {
+        isPriceDragging = false;
+        if (canvas) canvas.style.cursor = 'crosshair';
+      }
       if (isDragging) {
         isDragging = false;
         if (canvas) canvas.style.cursor = 'crosshair';
@@ -1650,6 +1682,11 @@
 
     canvas.addEventListener('wheel', function (e) {
       e.preventDefault();
+      if (e.shiftKey) {
+        priceZoom = Math.max(0.25, Math.min(3, priceZoom * (e.deltaY < 0 ? 0.9 : 1.1)));
+        scheduleChartRender();
+        return;
+      }
       zoomChart(e.deltaY < 0 ? -4 : 4);
     }, { passive: false });
 
@@ -1663,6 +1700,12 @@
       panOffset = 0;
       scheduleChartRender();
     });
+    const priceUp = $('chart-price-up');
+    const priceDown = $('chart-price-down');
+    const priceReset = $('chart-price-reset');
+    if (priceUp) priceUp.addEventListener('click', () => { pricePan += 0.15; scheduleChartRender(); });
+    if (priceDown) priceDown.addEventListener('click', () => { pricePan -= 0.15; scheduleChartRender(); });
+    if (priceReset) priceReset.addEventListener('click', () => { priceZoom = 1; pricePan = 0; scheduleChartRender(); });
 
     // --- Click: Handle "▶ TO LIVE" Button ---
     canvas.addEventListener('click', function (e) {

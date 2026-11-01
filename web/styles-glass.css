@@ -484,6 +484,9 @@ body {
 #dash .chart-zoom-controls { position: absolute; top: 10px; left: 10px; z-index: 12; display: flex; gap: 5px; }
 #dash .chart-zoom-controls button { width: 30px; height: 28px; padding: 0; border: 1px solid rgba(37, 99, 235, .2); border-radius: 8px; background: rgba(255, 255, 255, .9); color: #1d4ed8; font: 900 17px "Space Grotesk", sans-serif; cursor: pointer; box-shadow: 0 5px 12px -9px rgba(15, 23, 42, .65); }
 #dash .chart-zoom-controls button:hover { background: #eff6ff; border-color: rgba(37, 99, 235, .45); }
+#dash .chart-price-controls { position: absolute; top: 10px; right: 9px; z-index: 12; display: flex; flex-direction: column; gap: 4px; }
+#dash .chart-price-controls button { width: 25px; height: 24px; padding: 0; border: 1px solid rgba(37, 99, 235, .18); border-radius: 6px; background: rgba(255, 255, 255, .86); color: #64748b; font: 800 10px "Space Grotesk", sans-serif; cursor: pointer; }
+#dash .chart-price-controls button:hover { background: #eff6ff; color: #1d4ed8; border-color: rgba(37, 99, 235, .42); }
 #dash .chart-status-overlay { background: rgba(255, 255, 255, 0.88) !important; }
 #dash .chart-status-title { color: #0f172a !important; }
 #dash .chart-status-sub { color: #64748b !important; }
