@@ -106,6 +106,7 @@
     var kind = String((meta && meta.kind) || '').toLowerCase();
     // XAUUSDm -> XAUUSD, BTCUSDTm -> BTCUSDT, Vm -> V, ChinaHm -> ChinaH
     var base = k.replace(/m$/, '').toUpperCase();
+    if (base === 'XAUUSD247' || base === 'XAUUSD') return 'OANDA:XAUUSD';
 
     if (kind === 'crypto') {
       // BTCUSDT -> BTC, ETHUSD -> ETH, DOGEUSD -> DOGE
@@ -209,10 +210,18 @@
     if (show) {
       mountWidget();
       applyFrame();
+      if (box) box.style.display = 'block';
+      var canvasBox = wrapper && wrapper.querySelector('.binance-canvas-box');
+      if (canvasBox) canvasBox.style.display = 'none';
     } else if (wasActive) {
       // TradingView just stopped drawing the candles - the built-in chart
       // needs one fresh snapshot (the feed skipped it while TV was on).
       window.dispatchEvent(new CustomEvent('chart:refresh'));
+    }
+    if (!show) {
+      if (box) box.style.display = 'none';
+      var builtIn = wrapper && wrapper.querySelector('.binance-canvas-box');
+      if (builtIn) builtIn.style.display = '';
     }
   }
 

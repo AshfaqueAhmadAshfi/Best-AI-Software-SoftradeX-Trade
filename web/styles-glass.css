@@ -481,6 +481,9 @@ body {
 #dash .b-legend-ind.whale-ind { color: #334155 !important; }
 #dash .binance-canvas-box { background: #ffffff !important; border-radius: 14px !important; }
 #dash #binance-candlestick-canvas { background: #ffffff !important; }
+#dash .chart-zoom-controls { position: absolute; top: 10px; left: 10px; z-index: 12; display: flex; gap: 5px; }
+#dash .chart-zoom-controls button { width: 30px; height: 28px; padding: 0; border: 1px solid rgba(37, 99, 235, .2); border-radius: 8px; background: rgba(255, 255, 255, .9); color: #1d4ed8; font: 900 17px "Space Grotesk", sans-serif; cursor: pointer; box-shadow: 0 5px 12px -9px rgba(15, 23, 42, .65); }
+#dash .chart-zoom-controls button:hover { background: #eff6ff; border-color: rgba(37, 99, 235, .45); }
 #dash .chart-status-overlay { background: rgba(255, 255, 255, 0.88) !important; }
 #dash .chart-status-title { color: #0f172a !important; }
 #dash .chart-status-sub { color: #64748b !important; }

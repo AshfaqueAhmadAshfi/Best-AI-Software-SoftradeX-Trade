@@ -1636,25 +1636,33 @@
     });
 
     // --- Mouse Wheel Zoom ---
+    function zoomChart(delta) {
+      const previous = visibleCandlesCount;
+      visibleCandlesCount = Math.max(16, Math.min(220, visibleCandlesCount + delta));
+      const chartW = (canvas.width / dpr) - PRICE_AXIS_W;
+      if (visibleCandlesCount !== previous && chartW > 0) {
+        const previousSlot = chartW / previous;
+        const nextSlot = chartW / visibleCandlesCount;
+        panOffset = Math.max(0, Math.min(getMaxPan(), panOffset + chartW * 0.5 * (nextSlot / previousSlot - 1)));
+      }
+      scheduleChartRender();
+    }
+
     canvas.addEventListener('wheel', function (e) {
       e.preventDefault();
-      const zoomStep = e.deltaY < 0 ? -4 : 4;
-      const prevCount = visibleCandlesCount;
-      visibleCandlesCount = Math.max(16, Math.min(220, visibleCandlesCount + zoomStep));
-
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const chartW = (canvas.width / dpr) - PRICE_AXIS_W;
-
-      if (visibleCandlesCount !== prevCount && chartW > 0) {
-        const prevSlot = chartW / prevCount;
-        const newSlot = chartW / visibleCandlesCount;
-        const ratio = Math.max(0, Math.min(1, mouseX / chartW));
-        panOffset = Math.max(0, Math.min(getMaxPan(), panOffset + (chartW * (1 - ratio)) * (newSlot / prevSlot - 1)));
-      }
-
-      scheduleChartRender();
+      zoomChart(e.deltaY < 0 ? -4 : 4);
     }, { passive: false });
+
+    const zoomIn = $('chart-zoom-in');
+    const zoomOut = $('chart-zoom-out');
+    const zoomReset = $('chart-zoom-reset');
+    if (zoomIn) zoomIn.addEventListener('click', () => zoomChart(-4));
+    if (zoomOut) zoomOut.addEventListener('click', () => zoomChart(4));
+    if (zoomReset) zoomReset.addEventListener('click', () => {
+      visibleCandlesCount = 55;
+      panOffset = 0;
+      scheduleChartRender();
+    });
 
     // --- Click: Handle "▶ TO LIVE" Button ---
     canvas.addEventListener('click', function (e) {
